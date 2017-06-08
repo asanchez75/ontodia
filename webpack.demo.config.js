@@ -8,6 +8,7 @@ var npmDir = path.join(__dirname, 'node_modules');
 
 module.exports = {
     entry: {
+        rdf: path.join(__dirname, 'src', 'examples', 'rdf.ts'),
         demo: path.join(__dirname, 'src', 'examples', 'demo.ts'),
         sparql: path.join(__dirname, 'src', 'examples', 'sparql.ts'),
         dbpedia: path.join(__dirname, 'src', 'examples', 'dbpedia.ts'),
@@ -40,6 +41,12 @@ module.exports = {
         ],
     },
     plugins: [
+        new HtmlWebpackPlugin({
+            filename: 'rdf.html',
+            title: 'Ontodia RDF Demo',
+            chunks: ['commons', 'rdf'],
+            template: path.join(__dirname, 'src', 'examples', 'template.ejs'),
+        }),
         new HtmlWebpackPlugin({
             title: 'Ontodia Local Demo',
             chunks: ['commons', 'demo'],

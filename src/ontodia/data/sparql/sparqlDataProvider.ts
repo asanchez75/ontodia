@@ -61,7 +61,7 @@ export class SparqlDataProvider implements DataProvider {
     dataLabelProperty: string;
     constructor(
         private options: SparqlDataProviderOptions,
-        private settings: SparqlDataProviderSettings = OWLStatsSettings
+        private settings: SparqlDataProviderSettings = OWLStatsSettings,
     ) {
         this.dataLabelProperty = options.labelProperty ? options.labelProperty : settings.dataLabelProperty;
     }
