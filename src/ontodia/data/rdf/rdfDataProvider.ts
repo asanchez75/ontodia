@@ -34,14 +34,15 @@ export class RDFDataProvider implements DataProvider {
     classTree(): Promise<ClassModel[]> {
         const rdfClasses = this.rdfStore.each(undefined, this.prefs.RDF('type'), this.prefs.RDFS('Class'));
         const owlClasses = this.rdfStore.each(undefined, this.prefs.RDF('type'), this.prefs.OWL('Class'));
+        const fromRDFTypes =
+            this.rdfStore.statementsMatching(undefined, this.prefs.RDF('type'), undefined)
+                .map(statemet => statemet.object);
 
-        const classes = rdfClasses.concat(owlClasses);
+        const classes = rdfClasses.concat(owlClasses).concat(fromRDFTypes);
         const dictionary: Dictionary<ClassModel> = {};
         const firstLevel: Dictionary<ClassModel> = {};
 
         for (const cl of classes) {
-            const labels = this.getLabels(cl);
-
             const parents = this.rdfStore.each(
                 cl,
                 this.prefs.RDFS('subClassOf'),
@@ -53,19 +54,17 @@ export class RDFDataProvider implements DataProvider {
             if (!classAlreadyExists) {
                 classElement = {
                     id: cl.value,
-                    label: { values: labels },
+                    label: { values: this.getLabels(cl) },
                     count: this.getCount(cl),
                     children: [],
                 };
                 dictionary[cl.value] = classElement;
                 firstLevel[cl.value] = classElement;
-            } else if (dictionary[cl.value].count === -1) {
+            } else if (!dictionary[cl.value].label) {
                 classElement = dictionary[cl.value];
-                classElement.count = 1;
-                classElement.label = { values: labels };
+                classElement.label = { values: this.getLabels(cl) };
             } else {
                 classElement = dictionary[cl.value];
-                classElement.count++;
             }
 
             for (const p of parents) {
@@ -85,17 +84,19 @@ export class RDFDataProvider implements DataProvider {
                 delete firstLevel[classElement.id];
             }
         }
-
-        return Promise.resolve(
-            Object.keys(firstLevel)
-                .map(k => {
-                    if (!firstLevel[k].label) {
-                        firstLevel[k].label = { values: this.createLabelFromId(firstLevel[k].id) };
-                    }
-                    return firstLevel[k];
-                }),
-            );
+        const result = Object.keys(firstLevel)
+            .map(k => {
+                if (!firstLevel[k].label) {
+                    firstLevel[k].label = { values: this.createLabelFromId(firstLevel[k].id) };
+                }
+                return firstLevel[k];
+            },
+        );
+        return Promise.resolve(result);
     }
+
+    // For lazy loading (not implemented)
+    // ====================================================
 
     propertyInfo(params: { propertyIds: string[] }): Promise<Dictionary<PropertyModel>> {
         return Promise.resolve({});
@@ -106,19 +107,10 @@ export class RDFDataProvider implements DataProvider {
     }
 
     linkTypesInfo(params: {linkTypeIds: string[]}): Promise<LinkType[]> {
-        const idList = $rdf.list(params.linkTypeIds);
-        const rdfLinks = this.rdfStore.each(idList, this.prefs.RDF('type'), this.prefs.RDF('Property'));
-        const owlLinks = this.rdfStore.each(idList, this.prefs.RDF('type'), this.prefs.OWL('ObjectProperty'));
-        const links = rdfLinks.concat(owlLinks);
-
-        const result = links.map(l => ({
-            id: l.value,
-            label: { values: this.getLabels(l) },
-            count: this.getCount(l),
-        }));
-
-        return Promise.resolve(result);
+        return Promise.resolve([]);
     }
+
+    // ====================================================
 
     linkTypes(): Promise<LinkType[]> {
         const rdfLinks = this.rdfStore.each(undefined, this.prefs.RDF('type'), this.prefs.RDF('Property'));
@@ -153,28 +145,67 @@ export class RDFDataProvider implements DataProvider {
         return Promise.resolve(result);
     }
 
-    private enrichedElementsInfo(
-        elementsInfo: Dictionary<ElementModel>,
-        types: string[]
-    ): Promise<Dictionary<ElementModel>> {
-        return Promise.resolve({});
-    }
-
-    private prepareElementsImage(
-        elementsInfo: Dictionary<ElementModel>,
-    ): Promise<Dictionary<ElementModel>> {
-        return Promise.resolve({});
-    }
-
     linksInfo(params: {
         elementIds: string[];
         linkTypeIds: string[];
     }): Promise<LinkModel[]> {
-        return Promise.resolve([]);
+        const links: LinkModel[] = [];
+
+        for (const sourceId of params.elementIds) {
+            const source = $rdf.sym(sourceId);
+            for (const targetId of params.elementIds) {
+                const target = $rdf.sym(targetId);
+                const obtainedlinks = this.rdfStore.each(source, undefined, target);
+                for (const l of obtainedlinks) {
+                    links.push({
+                        linkTypeId: l.value,
+                        sourceId: sourceId,
+                        targetId: targetId,
+                    });
+                }
+            }
+        }
+
+        return Promise.resolve(links);
     }
 
     linkTypesOf(params: { elementId: string; }): Promise<LinkCount[]> {
-        return Promise.resolve([]);
+        const element = $rdf.sym(params.elementId);
+        const links: LinkCount[] = [];
+        const linkMap: Dictionary<LinkCount> = {};
+
+        const inElements =
+            this.rdfStore.statementsMatching(undefined, undefined, element)
+                .filter(st => st.subject.termType === 'NamedNode');
+        const outElements =
+            this.rdfStore.statementsMatching(element, undefined, undefined)
+                .filter(st => st.object.termType === 'NamedNode');
+
+        for (const el of inElements) {
+            if (!linkMap[el.predicate.value]) {
+                linkMap[el.predicate.value] = {
+                    id: el.predicate.value,
+                    inCount: 1,
+                    outCount: 0,
+                };
+                links.push(linkMap[el.predicate.value]);
+            } else {
+                linkMap[el.predicate.value].inCount++;
+            }
+        }
+        for (const el of outElements) {
+            if (!linkMap[el.predicate.value]) {
+                linkMap[el.predicate.value] = {
+                    id: el.predicate.value,
+                    inCount: 0,
+                    outCount: 1,
+                };
+                links.push(linkMap[el.predicate.value]);
+            } else {
+                linkMap[el.predicate.value].outCount++;
+            }
+        }
+        return Promise.resolve(links);
     };
 
 
@@ -185,21 +216,100 @@ export class RDFDataProvider implements DataProvider {
         offset: number;
         direction?: 'in' | 'out';
     }): Promise<Dictionary<ElementModel>> {
-        return Promise.resolve({});
+        return this.filter({
+            refElementId: params.elementId,
+            refElementLinkId: params.linkId,
+            limit: params.limit,
+            offset: params.offset,
+            languageCode: ''});
     }
 
     filter(params: FilterParams): Promise<Dictionary<ElementModel>> {
-        return Promise.resolve({});
+        if (params.limit === 0) { params.limit = 100; }
+
+        const result: Dictionary<ElementModel> = {};
+        let elements;
+        if (params.elementTypeId) {
+            elements =
+                this.rdfStore.each(
+                    undefined,
+                    this.prefs.RDF('type'),
+                    $rdf.sym(params.elementTypeId),
+                ).map(el => this.namedNode2ElementModel(el));
+        } else if (params.refElementId && params.refElementLinkId) {
+            const refEl = $rdf.sym(params.refElementId);
+            const refLink = $rdf.sym(params.refElementLinkId);
+            const inElements =
+                this.rdfStore.each(undefined, refLink, refEl)
+                    .filter(el => el.termType === 'NamedNode')
+                    .map(el => this.namedNode2ElementModel(el));
+            const outElements =
+                this.rdfStore.each(refEl, refLink, undefined)
+                    .filter(el => el.termType === 'NamedNode')
+                    .map(el => this.namedNode2ElementModel(el));
+            elements = inElements.concat(outElements);
+        } else if (params.refElementId) {
+            const rdfEl = $rdf.sym(params.refElementId);
+            const inElements =
+                this.rdfStore.statementsMatching(undefined, undefined, rdfEl)
+                    .filter(st => st.subject.termType === 'NamedNode')
+                    .map(st => this.namedNode2ElementModel(st.subject));
+            const outElements =
+                this.rdfStore.statementsMatching(rdfEl, undefined, undefined)
+                    .filter(st => st.object.termType === 'NamedNode')
+                    .map(st => this.namedNode2ElementModel(st.object));
+            elements = inElements.concat(outElements);
+        } else if (params.text) {
+            elements = this.rdfStore.each(undefined, undefined, undefined)
+                    .filter(el => el.termType === 'NamedNode')
+                    .map(el => this.namedNode2ElementModel(el));
+        } else {
+            return Promise.resolve({});
+        }
+
+        function filter (e: ElementModel) {
+            if (params.text) {
+                const key = params.text.toLowerCase();
+                const matchId = e.id.toLowerCase().indexOf(key) !== -1;
+                let matchLabel = false;
+                for (const label of e.label.values) {
+                    matchLabel = matchLabel || label.text.toLowerCase().indexOf(key) !== -1;
+                }
+                return matchId || matchLabel;
+            } else {
+                return true;
+            }
+        }
+
+        elements = elements.filter(filter).slice(params.offset, (params.limit - params.offset));
+        for (const el of elements) {
+            result[el.id] = el;
+        }
+        return Promise.resolve(result);
     };
 
-
     // Helpers
+    // ====================================================
+    private namedNode2ElementModel (el: $rdf.NamedNode): ElementModel {
+        return {
+            id: el.value,
+            types: this.getTypes(el),
+            label: { values: this.getLabels(el) },
+            properties: this.getProps(el),
+        };
+    }
 
     private createLabelFromId (id: string): LocalizedString[] {
-        const urlParts = id.split('/');
-        const sharpParts = urlParts[urlParts.length - 1].split('#');
+        let label;
+        if (id) {
+            const urlParts = id.split('/');
+            const sharpParts = urlParts[urlParts.length - 1].split('#');
+            label = sharpParts[sharpParts.length - 1];
+        } else {
+            label = '';
+        }
         return [{
-                text: sharpParts[sharpParts.length - 1],
+                text: label,
                 lang: '',
             }];
     }
@@ -216,19 +326,24 @@ export class RDFDataProvider implements DataProvider {
         return labels.length > 0 ? labels : this.createLabelFromId(el.value);
     }
 
-    private getProps (el: $rdf.NamedNode): { [id: string]: Property } {
-        // const rdfLinks = this.rdfStore.each(el, this.prefs.RDF('type'), this.prefs.RDF('Property'));
-        // const owlLinks = this.rdfStore.each(el, this.prefs.RDF('type'), this.prefs.OWL('ObjectProperty'));
-
-        // return this.rdfStore.each(
-        //     el,
-        //     this.prefs.RDFS('label'),
-        //     undefined,
-        // ).map(l => ({
-        //     text: l.value,
-        //     lang: l.language,
-        // }));
-        return {};
+    private getProps (el: $rdf.NamedNode): Dictionary<Property> {
+        const props: Dictionary<Property> = {};
+        const propsList = this.rdfStore.statementsMatching(el, undefined, undefined);
+        for (const statemet of propsList) {
+            if (
+                statemet.object.termType === 'Literal' &&
+                statemet.predicate.value !== this.prefs.RDFS('label').value
+            ) {
+                props[statemet.predicate.value] = {
+                    type: 'string',
+                    values: [{
+                        text: statemet.object.value,
+                        lang: statemet.object.language,
+                    }],
+                };
+            }
+        }
+        return props;
     }
 
     private getTypes (el: $rdf.NamedNode): string[] {
@@ -240,11 +355,12 @@ export class RDFDataProvider implements DataProvider {
     }
 
     private getCount (el: $rdf.NamedNode): number {
-        return this.rdfStore.each(
+        const count = this.rdfStore.each(
             undefined,
             this.prefs.RDF('type'),
             el,
         ).length;
+        return count === 0 ? undefined : count;
     }
 }
 

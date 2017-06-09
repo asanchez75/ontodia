@@ -5,8 +5,6 @@ declare module "rdflib" {
 
     function Namespace(namespaces: string): () => NamedNode;
 
-    function list(arr: (NamedNode|string)[]): NamedNode;
-
     function sym(id: string): NamedNode;
 
     class IndexedFormula extends Formula {
@@ -37,11 +35,19 @@ declare module "rdflib" {
         anyStatementMatching: (subj: any, pred: any, obj: any, why?: any) => any;
         anyValue: (s: any, p: any, o: any, g?: any) => any;
         each: (s: any, p: any, o: any, g?: any) => NamedNode[];
+        statementsMatching: (s: any, p: any, o: any, g?: any) => Statement[];
     }
 
     class NamedNode {
         termType: string;
         value: string;
         language: string;
+    }
+
+    class Statement {
+        object: NamedNode;
+        predicate: NamedNode;
+        subject: NamedNode;
+        why: NamedNode;
     }
 }

@@ -17,7 +17,7 @@ export function getData (): string {
 @prefix dcam: <http://purl.org/dc/dcam/> .
 @prefix dct: <http://purl.org/dc/terms/> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
-@prefix dtype: <http://www.linkedmodel.org/schema/dtype> .
+@prefix dtype: <http://www.linkedmodel.org/schema/dtype#> .
 @prefix edg: <http://edg.topbraid.solutions/model/> .
 @prefix edg-glossary: <http://edg.topbraid.solutions/glossary/> .
 @prefix edg-sqoop: <http://edg.topbraid.solutions/model/sqoop/> .
