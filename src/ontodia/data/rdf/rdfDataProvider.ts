@@ -5,20 +5,24 @@ import {
     LocalizedString, Dictionary, ClassModel, LinkType, ElementModel,
     LinkModel, LinkCount, PropertyModel, Property,
 } from '../model';
-import getData from './getData';
 
-const RAW_RDF_DATA = getData();
+const DEFAULT_STOREG_TYPE = 'text/turtle';
+const DEFAULT_STOREG_URI = 'https://ontodia.org/localData.rdf';
 
 export class RDFDataProvider implements DataProvider {
     private rdfStore: $rdf.IndexedFormula;
-    private storeURI: string;
     private prefs: any;
 
-    constructor() {
-        this.storeURI = 'https://ontodia.org/testData.ttl';
+    constructor(params: { data: { content: string, type?: string, uri?: string}[] }) {
         this.rdfStore = $rdf.graph();
         try {
-            $rdf.parse(RAW_RDF_DATA, this.rdfStore, this.storeURI, 'text/turtle');
+            for (const data of params.data) {
+                $rdf.parse(
+                    data.content,
+                    this.rdfStore, data.uri || DEFAULT_STOREG_URI,
+                    data.type || DEFAULT_STOREG_TYPE,
+                );
+            }
             this.prefs = {
                 RDF: $rdf.Namespace('http://www.w3.org/1999/02/22-rdf-syntax-ns#'),
                 RDFS: $rdf.Namespace('http://www.w3.org/2000/01/rdf-schema#'),
@@ -219,6 +223,7 @@ export class RDFDataProvider implements DataProvider {
         return this.filter({
             refElementId: params.elementId,
             refElementLinkId: params.linkId,
+            linkDirection: params.direction,
             limit: params.limit,
             offset: params.offset,
             languageCode: ''});
@@ -239,15 +244,17 @@ export class RDFDataProvider implements DataProvider {
         } else if (params.refElementId && params.refElementLinkId) {
             const refEl = $rdf.sym(params.refElementId);
             const refLink = $rdf.sym(params.refElementLinkId);
-            const inElements =
-                this.rdfStore.each(undefined, refLink, refEl)
-                    .filter(el => el.termType === 'NamedNode')
-                    .map(el => this.namedNode2ElementModel(el));
-            const outElements =
-                this.rdfStore.each(refEl, refLink, undefined)
-                    .filter(el => el.termType === 'NamedNode')
-                    .map(el => this.namedNode2ElementModel(el));
-            elements = inElements.concat(outElements);
+            if (params.linkDirection === 'in') {
+                elements =
+                    this.rdfStore.each(undefined, refLink, refEl)
+                        .filter(el => el.termType === 'NamedNode')
+                        .map(el => this.namedNode2ElementModel(el));
+            } else {
+                elements =
+                    this.rdfStore.each(refEl, refLink, undefined)
+                        .filter(el => el.termType === 'NamedNode')
+                        .map(el => this.namedNode2ElementModel(el));
+            }
         } else if (params.refElementId) {
             const rdfEl = $rdf.sym(params.refElementId);
             const inElements =
@@ -281,7 +288,7 @@ export class RDFDataProvider implements DataProvider {
             }
         }
 
-        elements = elements.filter(filter).slice(params.offset, (params.limit - params.offset));
+        elements = elements.filter(filter).slice(params.offset, params.offset + params.limit);
         for (const el of elements) {
             result[el.id] = el;
         }

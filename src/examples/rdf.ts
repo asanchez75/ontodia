@@ -5,6 +5,8 @@ import { Workspace, WorkspaceProps, RDFDataProvider } from '../index';
 
 import { onPageLoad, tryLoadLayoutFromLocalStorage, saveLayoutToLocalStorage } from './common';
 
+const data = require<string>('raw-loader!./resources/testData.ttl');
+
 require('jointjs/css/layout.css');
 require('jointjs/css/themes/default.css');
 
@@ -20,7 +22,14 @@ function onWorkspaceMounted(workspace: Workspace) {
     model.importLayout({
         layoutData,
         validateLinks: true,
-        dataProvider: new RDFDataProvider(),
+        dataProvider: new RDFDataProvider({
+            data: [
+                {
+                    content: data,
+                    type: 'text/turtle',
+                },
+            ],
+        }),
     });
 }
 
