@@ -1,4 +1,3 @@
-import 'whatwg-fetch';
 import * as $rdf from 'rdflib';
 import { DataProvider, FilterParams } from '../provider';
 import {
@@ -212,7 +211,6 @@ export class RDFDataProvider implements DataProvider {
         return Promise.resolve(links);
     };
 
-
     linkElements(params: {
         elementId: string;
         linkId: string;
@@ -295,8 +293,6 @@ export class RDFDataProvider implements DataProvider {
         return Promise.resolve(result);
     };
 
-    // Helpers
-    // ====================================================
     private namedNode2ElementModel (el: $rdf.NamedNode): ElementModel {
         return {
             id: el.value,

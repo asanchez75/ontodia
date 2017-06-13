@@ -17,6 +17,7 @@ module.exports = {
         sparqlRDFGraph: path.join(__dirname, 'src', 'examples', 'sparqlRDFGraph.ts'),
         styleCustomization: path.join(__dirname, 'src', 'examples', 'styleCustomization.ts'),
         wikidata: path.join(__dirname, 'src', 'examples', 'wikidata.ts'),
+        composite: path.join(__dirname, 'src', 'examples', 'composite.ts'),
         wikidataGraph: path.join(__dirname, 'src', 'examples', 'wikidataGraph.ts'),
     },
     resolve: {
@@ -98,6 +99,12 @@ module.exports = {
             filename: 'wikidataGraph.html',
             title: 'Ontodia Wikidata with graph Demo',
             chunks: ['commons', 'wikidataGraph', ],
+            template: path.join(__dirname, 'src', 'examples', 'template.ejs'),
+        }),
+        new HtmlWebpackPlugin({
+            filename: 'composite.html',
+            title: 'Ontodia composite DP Demo',
+            chunks: ['commons', 'composite'],
             template: path.join(__dirname, 'src', 'examples', 'template.ejs'),
         }),
         new CommonsChunkPlugin('commons', 'commons.chunk.js'),
