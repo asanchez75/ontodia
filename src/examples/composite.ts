@@ -9,6 +9,7 @@ import {
     SparqlDataProvider,
     OWLStatsSettings,
     SparqlQueryMethod,
+    DBPediaSettings,
  } from '../index';
 
 import { onPageLoad, tryLoadLayoutFromLocalStorage, saveLayoutToLocalStorage } from './common';
@@ -44,6 +45,15 @@ function onWorkspaceMounted(workspace: Workspace) {
         queryMethod: SparqlQueryMethod.GET,
     }, OWLStatsSettings);
 
+    const dbPediaDataProvider = new SparqlDataProvider({
+        endpointUrl: 'http://dbpedia.org/sparql',
+        imagePropertyUris: [
+            'http://xmlns.com/foaf/0.1/depiction',
+            'http://xmlns.com/foaf/0.1/img',
+        ],
+        queryMethod: SparqlQueryMethod.GET,
+    }, DBPediaSettings);
+
     const layoutData = tryLoadLayoutFromLocalStorage();
     model.importLayout({
         layoutData,
@@ -51,6 +61,7 @@ function onWorkspaceMounted(workspace: Workspace) {
         dataProvider: new CompositeDataProvider([
             sparqlDataProvider,
             rdfDataProvider,
+            dbPediaDataProvider,
         ]),
     });
 }

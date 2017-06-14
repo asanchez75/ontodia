@@ -170,16 +170,9 @@ export class CompositeDataProvider implements DataProvider {
         return Object.keys(dictionary).map(key => dictionary[key]);
     }
 
-    private mergeLinkTypes(models: LinkType[][]): LinkType[] {
+    private mergeLinkTypes = (models: LinkType[][]): LinkType[] => {
         return this.mergeLinkTypesInfo(models);
     }
-
-    // id: string;
-    // types: string[];
-    // label: { values: LocalizedString[] };
-    // image?: string;
-    // properties: { [id: string]: Property };
-    // sources?: string[];
 
     private mergeElementInfo = (models: Dictionary<ElementModel>[]): Dictionary<ElementModel> => {
         const lists = models.map(dict => Object.keys(dict).map(k => dict[k]));
@@ -211,7 +204,7 @@ export class CompositeDataProvider implements DataProvider {
             }
         }
 
-        return models[0];
+        return dictionary;
     }
 
     private mergeProperty = (a: Dictionary<Property>, b: Dictionary<Property>): Dictionary<Property> => {
@@ -232,20 +225,54 @@ export class CompositeDataProvider implements DataProvider {
         return result;
     }
 
-    private mergeLinksInfo(models: LinkModel[][]): LinkModel[] {
-        return models[0];
+    private mergeLinksInfo(linkInfoResponse: LinkModel[][]): LinkModel[] {
+        const resultInfo: LinkModel[] = [];
+
+        function compareLinksInfo (a: LinkModel, b: LinkModel): boolean {
+            return a.sourceId === b.sourceId &&
+                   a.targetId === b.targetId &&
+                   a.linkTypeId === b.linkTypeId;
+        }
+
+        for (const linkInfo of linkInfoResponse) {
+            for (const linkModel of linkInfo) {
+                if (!contain<LinkModel>(linkModel, resultInfo, compareLinksInfo)) {
+                    resultInfo.push(linkModel);
+                }
+            }
+        }
+        return resultInfo;
     }
 
-    private mergeLinkTypesOf(models: LinkCount[][]): LinkCount[] {
-        return models[0];
+    private mergeLinkTypesOf(linkKountsResponse: LinkCount[][]): LinkCount[] {
+        const dictionary: Dictionary<LinkCount> = {};
+
+        const mergeCounts = (a: LinkCount, b: LinkCount): LinkCount => {
+            return {
+                id: a.id,
+                inCount: Math.max(a.inCount, b.inCount),
+                outCount: Math.max(a.outCount, b.outCount),
+            };
+        };
+
+        for (const linkCount of linkKountsResponse) {
+            for (const lCount of linkCount) {
+                if (!dictionary[lCount.id]) {
+                    dictionary[lCount.id] = lCount;
+                } else {
+                    dictionary[lCount.id] = mergeCounts(lCount, dictionary[lCount.id]);
+                }
+            }
+        }
+        return Object.keys(dictionary).map(key => dictionary[key]);
     }
 
-    private mergeLinkElements(models: Dictionary<ElementModel>[]): Dictionary<ElementModel> {
-        return models[0];
+    private mergeLinkElements = (models: Dictionary<ElementModel>[]): Dictionary<ElementModel> => {
+        return this.mergeElementInfo(models);
     }
 
-    private mergeFilter(models: Dictionary<ElementModel>[]): Dictionary<ElementModel> {
-        return models[0];
+    private mergeFilter = (models: Dictionary<ElementModel>[]): Dictionary<ElementModel> => {
+        return this.mergeElementInfo(models);
     }
 
     private classTree2Array(models: ClassModel[]): ClassModel[] {
@@ -277,19 +304,10 @@ export class CompositeDataProvider implements DataProvider {
             return l1.lang === l2.lang && l1.text === l2.text;
         }
 
-        function contain(locStr: LocalizedString, strList: LocalizedString[]) {
-            for (const ls of strList) {
-                if (compareLabels(ls, locStr)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
         const mergedValuesList = a.values;
 
         for (const locStr of b.values) {
-            if (!contain(locStr, mergedValuesList)) {
+            if (!contain<LocalizedString>(locStr, mergedValuesList, compareLabels)) {
                 mergedValuesList.push(locStr);
             }
         }
@@ -317,3 +335,12 @@ export class CompositeDataProvider implements DataProvider {
 }
 
 export default CompositeDataProvider;
+
+function contain<Type>(locStr: Type, strList: Type[], comparator: (a: Type, b: Type) => boolean) {
+    for (const ls of strList) {
+        if (comparator(ls, locStr)) {
+            return true;
+        }
+    }
+    return false;
+}
