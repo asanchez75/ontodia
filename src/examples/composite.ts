@@ -59,9 +59,9 @@ function onWorkspaceMounted(workspace: Workspace) {
         layoutData,
         validateLinks: true,
         dataProvider: new CompositeDataProvider([
-            sparqlDataProvider,
-            rdfDataProvider,
-            dbPediaDataProvider,
+            { name: 'RDF Data Provider', dataProvider: rdfDataProvider },
+            { name: 'SparQL Data Provider', dataProvider: sparqlDataProvider },
+            { name: 'DBPedia Data Provider', dataProvider: dbPediaDataProvider },
         ]),
     });
 }

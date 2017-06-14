@@ -138,12 +138,14 @@ export class RDFDataProvider implements DataProvider {
         const result: Dictionary<ElementModel> = {};
         for (const id of params.elementIds) {
             const el = $rdf.sym(id);
-            result[id] = {
-                id: id,
-                types: this.getTypes(el),
-                label: { values: this.getLabels(el) },
-                properties: this.getProps(el),
-            };
+            if (this.rdfStore.any(el, undefined, undefined)) {
+                result[id] = {
+                    id: id,
+                    types: this.getTypes(el),
+                    label: { values: this.getLabels(el) },
+                    properties: this.getProps(el),
+                };
+            }
         }
         return Promise.resolve(result);
     }

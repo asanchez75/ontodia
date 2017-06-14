@@ -31,7 +31,7 @@ declare module "rdflib" {
         add: (subj: any, pred: any, obj: any, why?: any) => void;
         addAll: (statements: any) => void;
         allAliases: (x: any) => void;
-        any: (s: any, p: any, o: any, g?: any) => void;
+        any: (s: any, p: any, o: any, g?: any) => NamedNode | undefined;
         anyStatementMatching: (subj: any, pred: any, obj: any, why?: any) => any;
         anyValue: (s: any, p: any, o: any, g?: any) => any;
         each: (s: any, p: any, o: any, g?: any) => NamedNode[];

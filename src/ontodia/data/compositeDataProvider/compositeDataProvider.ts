@@ -11,38 +11,110 @@ import {
     LocalizedString,
 } from '../model';
 
+export interface CompositeResponse<Type> {
+    dataSourceName: string;
+    response: Type;
+}
+
+export interface DPDefinition {
+    name: string;
+    dataProvider: DataProvider;
+}
+
+function isDefenition(dp: DataProvider | DPDefinition): dp is DPDefinition {
+    return (<DPDefinition> dp).name !== undefined && (<DPDefinition> dp).dataProvider !== undefined;
+}
+
 export class CompositeDataProvider implements DataProvider {
+    public dataProviders: DPDefinition[];
+
     constructor(
-        public dataProviders: DataProvider[],
-    ) { }
+        dataProviders: (DataProvider | DPDefinition)[],
+    ) {
+        let dpCounter = 1;
+        this.dataProviders = dataProviders.map(dp => {
+            if (isDefenition(dp)) {
+                return dp;
+            } else {
+                return {
+                    name: dp.constructor.name ?
+                        dp.constructor.name :
+                        'dataProvider_' + dpCounter++,
+                    dataProvider: dp,
+                };
+            }
+        });
+    }
 
     classTree(): Promise<ClassModel[]> {
-        const resultPromises = this.dataProviders.map(dp => dp.classTree());
+        const resultPromises = this.dataProviders.map(
+            dp => dp.dataProvider.classTree().then(
+                response => ({
+                    dataSourceName: dp.name,
+                    response: response,
+                }),
+            ),
+        );
         return Promise.all(resultPromises).then(this.mergeClassTree);
     }
 
     propertyInfo(params: { propertyIds: string[] }): Promise<Dictionary<PropertyModel>> {
-        const resultPromises = this.dataProviders.map(dp => dp.propertyInfo(params));
+        const resultPromises = this.dataProviders.map(
+            dp => dp.dataProvider.propertyInfo(params).then(
+                response => ({
+                    dataSourceName: dp.name,
+                    response: response,
+                }),
+            ),
+        );
         return Promise.all(resultPromises).then(this.mergePropertyInfo);
     }
 
     classInfo(params: { classIds: string[] }): Promise<ClassModel[]> {
-        const resultPromises = this.dataProviders.map(dp => dp.classInfo(params));
+        const resultPromises = this.dataProviders.map(
+            dp => dp.dataProvider.classInfo(params).then(
+                response => ({
+                    dataSourceName: dp.name,
+                    response: response,
+                }),
+            ),
+        );
         return Promise.all(resultPromises).then(this.mergeClassInfo);
     }
 
     linkTypesInfo(params: {linkTypeIds: string[]}): Promise<LinkType[]> {
-        const resultPromises = this.dataProviders.map(dp => dp.linkTypesInfo(params));
+        const resultPromises = this.dataProviders.map(
+            dp => dp.dataProvider.linkTypesInfo(params).then(
+                response => ({
+                    dataSourceName: dp.name,
+                    response: response,
+                }),
+            ),
+        );
         return Promise.all(resultPromises).then(this.mergeLinkTypesInfo);
     }
 
     linkTypes(): Promise<LinkType[]> {
-        const resultPromises = this.dataProviders.map(dp => dp.linkTypes());
+        const resultPromises = this.dataProviders.map(
+            dp => dp.dataProvider.linkTypes().then(
+                response => ({
+                    dataSourceName: dp.name,
+                    response: response,
+                }),
+            ),
+        );
         return Promise.all(resultPromises).then(this.mergeLinkTypes);
     }
 
     elementInfo(params: { elementIds: string[]; }): Promise<Dictionary<ElementModel>> {
-        const resultPromises = this.dataProviders.map(dp => dp.elementInfo(params));
+        const resultPromises = this.dataProviders.map(
+            dp => dp.dataProvider.elementInfo(params).then(
+                response => ({
+                    dataSourceName: dp.name,
+                    response: response,
+                }),
+            ),
+        );
         return Promise.all(resultPromises).then(this.mergeElementInfo);
     }
 
@@ -50,12 +122,26 @@ export class CompositeDataProvider implements DataProvider {
         elementIds: string[];
         linkTypeIds: string[];
     }): Promise<LinkModel[]> {
-        const resultPromises = this.dataProviders.map(dp => dp.linksInfo(params));
+        const resultPromises = this.dataProviders.map(
+            dp => dp.dataProvider.linksInfo(params).then(
+                response => ({
+                    dataSourceName: dp.name,
+                    response: response,
+                }),
+            ),
+        );
         return Promise.all(resultPromises).then(this.mergeLinksInfo);
     }
 
     linkTypesOf(params: { elementId: string; }): Promise<LinkCount[]> {
-        const resultPromises = this.dataProviders.map(dp => dp.linkTypesOf(params));
+        const resultPromises = this.dataProviders.map(
+            dp => dp.dataProvider.linkTypesOf(params).then(
+                response => ({
+                    dataSourceName: dp.name,
+                    response: response,
+                }),
+            ),
+        );
         return Promise.all(resultPromises).then(this.mergeLinkTypesOf);
     };
 
@@ -66,17 +152,31 @@ export class CompositeDataProvider implements DataProvider {
         offset: number;
         direction?: 'in' | 'out';
     }): Promise<Dictionary<ElementModel>> {
-        const resultPromises = this.dataProviders.map(dp => dp.linkElements(params));
+        const resultPromises = this.dataProviders.map(
+            dp => dp.dataProvider.linkElements(params).then(
+                response => ({
+                    dataSourceName: dp.name,
+                    response: response,
+                }),
+            ),
+        );
         return Promise.all(resultPromises).then(this.mergeLinkElements);
     }
 
     filter(params: FilterParams): Promise<Dictionary<ElementModel>> {
-        const resultPromises = this.dataProviders.map(dp => dp.filter(params));
+        const resultPromises = this.dataProviders.map(
+            dp => dp.dataProvider.filter(params).then(
+                response => ({
+                    dataSourceName: dp.name,
+                    response: response,
+                }),
+            ),
+        );
         return Promise.all(resultPromises).then(this.mergeFilter);
     };
 
-    private mergeClassTree = (trees: ClassModel[][]): ClassModel[] => {
-        const lists = trees.map(t => this.classTree2Array(t));
+    private mergeClassTree = (response: CompositeResponse<ClassModel[]>[]): ClassModel[] => {
+        const lists = response.map(r => this.classTree2Array(r.response));
         const dictionary: Dictionary<ClassModel> = {};
         const topLevelModels: Dictionary<ClassModel> = {};
         const childrenMap: Dictionary<string[]> = {};
@@ -117,9 +217,12 @@ export class CompositeDataProvider implements DataProvider {
         return Object.keys(topLevelModels).map(key => topLevelModels[key]);
     }
 
-    private mergePropertyInfo = (models: Dictionary<PropertyModel>[]): Dictionary<PropertyModel> => {
+    private mergePropertyInfo = (
+        response: CompositeResponse<Dictionary<PropertyModel>>[],
+    ): Dictionary<PropertyModel> => {
         const result: Dictionary<PropertyModel> = {};
-        for (const model of models) {
+        const props = response.map(r => r.response);
+        for (const model of props) {
             const keys = Object.keys(model);
             for (const key of keys) {
                 const prop = model[key];
@@ -133,9 +236,11 @@ export class CompositeDataProvider implements DataProvider {
         return result;
     }
 
-    private mergeClassInfo(classInfoResults: ClassModel[][]): ClassModel[] {
+    private mergeClassInfo(response: CompositeResponse<ClassModel[]>[]): ClassModel[] {
+        const dictionaries = response.map(r => r.response);
         const dictionary: Dictionary<ClassModel> = {};
-        for (const models of classInfoResults) {
+
+        for (const models of dictionaries) {
             for (const model of models) {
                 if (!dictionary[model.id]) {
                     dictionary[model.id] = model;
@@ -147,7 +252,9 @@ export class CompositeDataProvider implements DataProvider {
         return Object.keys(dictionary).map(key => dictionary[key]);
     }
 
-    private mergeLinkTypesInfo = (typesInfoResults: LinkType[][]): LinkType[] => {
+    private mergeLinkTypesInfo = (response: CompositeResponse<LinkType[]>[]): LinkType[] => {
+        const lists = response.map(r => r.response);
+
         const mergeLinkType = (a: LinkType, b: LinkType): LinkType => {
             return {
                 id: a.id,
@@ -158,7 +265,7 @@ export class CompositeDataProvider implements DataProvider {
 
         const dictionary: Dictionary<LinkType> = {};
 
-        for (const linkTypes of typesInfoResults) {
+        for (const linkTypes of lists) {
             for (const linkType of linkTypes) {
                 if (!dictionary[linkType.id]) {
                     dictionary[linkType.id] = linkType;
@@ -170,14 +277,11 @@ export class CompositeDataProvider implements DataProvider {
         return Object.keys(dictionary).map(key => dictionary[key]);
     }
 
-    private mergeLinkTypes = (models: LinkType[][]): LinkType[] => {
-        return this.mergeLinkTypesInfo(models);
+    private mergeLinkTypes = (response: CompositeResponse<LinkType[]>[]): LinkType[] => {
+        return this.mergeLinkTypesInfo(response);
     }
 
-    private mergeElementInfo = (models: Dictionary<ElementModel>[]): Dictionary<ElementModel> => {
-        const lists = models.map(dict => Object.keys(dict).map(k => dict[k]));
-        const dictionary: Dictionary<ElementModel> = {};
-
+    private mergeElementInfo = (response: CompositeResponse<Dictionary<ElementModel>>[]): Dictionary<ElementModel> => {
         const mergeElementModels = (a: ElementModel, b: ElementModel): ElementModel => {
             const types = a.types;
             for (const t of b.types) {
@@ -185,17 +289,38 @@ export class CompositeDataProvider implements DataProvider {
                     types.push(t);
                 }
             }
+            const sources: string[] = [];
+            for (const s of a.sources) {
+                if (sources.indexOf(s) === -1) {
+                    sources.push(s);
+                }
+            }
+            for (const s of b.sources) {
+                if (sources.indexOf(s) === -1) {
+                    sources.push(s);
+                }
+            }
             return {
                 id: a.id,
                 label: this.mergeLabels(a.label, b.label),
                 types: types,
                 image: a.image || b.image,
-                properties: this.mergeProperty(a.properties, b.properties),
+                properties: this.mergeProperties(a.properties, b.properties),
+                sources: sources,
             };
         };
 
-        for (const linst of lists) {
-            for (const em of linst) {
+        const dictionaries = response.map(r => r.response);
+        const dictionary: Dictionary<ElementModel> = {};
+
+        for (const resp of response) {
+            const list = Object.keys(resp.response).map(k => resp.response[k]);
+
+            for (const em of list) {
+                em.sources = [resp.dataSourceName];
+                em.properties['DataProvider'] = {
+                    type: 'string', values: [{ text: resp.dataSourceName, lang: '' }],
+                };
                 if (!dictionary[em.id]) {
                     dictionary[em.id] = em;
                 } else {
@@ -203,29 +328,45 @@ export class CompositeDataProvider implements DataProvider {
                 }
             }
         }
-
         return dictionary;
     }
 
-    private mergeProperty = (a: Dictionary<Property>, b: Dictionary<Property>): Dictionary<Property> => {
+    private mergeProperties = (a: Dictionary<Property>, b: Dictionary<Property>): Dictionary<Property> => {
         const aLists = Object.keys(a);
         const bLists = Object.keys(b);
 
         const result: Dictionary<Property> = {};
+
+        function createIdForProperty (baseId: string): string {
+            let counter = 1;
+            while (result[baseId + '_' + counter]) {
+                counter++;
+            }
+            return baseId + '_' + counter;
+        }
 
         for (const pKey of aLists) {
             const prop = a[pKey];
             if (!result[pKey]) {
                 result[pKey] = prop;
             } else {
-                result[pKey].values = this.mergeLabels(result[pKey], prop).values;
+                result[createIdForProperty(pKey)] = prop;
+            }
+        }
+        for (const pKey of bLists) {
+            const prop = b[pKey];
+            if (!result[pKey]) {
+                result[pKey] = prop;
+            } else {
+                result[createIdForProperty(pKey)] = prop;
             }
         }
 
         return result;
     }
 
-    private mergeLinksInfo(linkInfoResponse: LinkModel[][]): LinkModel[] {
+    private mergeLinksInfo(response: CompositeResponse<LinkModel[]>[]): LinkModel[] {
+        const lists = response.map(r => r.response);
         const resultInfo: LinkModel[] = [];
 
         function compareLinksInfo (a: LinkModel, b: LinkModel): boolean {
@@ -234,7 +375,7 @@ export class CompositeDataProvider implements DataProvider {
                    a.linkTypeId === b.linkTypeId;
         }
 
-        for (const linkInfo of linkInfoResponse) {
+        for (const linkInfo of lists) {
             for (const linkModel of linkInfo) {
                 if (!contain<LinkModel>(linkModel, resultInfo, compareLinksInfo)) {
                     resultInfo.push(linkModel);
@@ -244,7 +385,8 @@ export class CompositeDataProvider implements DataProvider {
         return resultInfo;
     }
 
-    private mergeLinkTypesOf(linkKountsResponse: LinkCount[][]): LinkCount[] {
+    private mergeLinkTypesOf(response: CompositeResponse<LinkCount[]>[]): LinkCount[] {
+        const lists = response.map(r => r.response);
         const dictionary: Dictionary<LinkCount> = {};
 
         const mergeCounts = (a: LinkCount, b: LinkCount): LinkCount => {
@@ -255,7 +397,7 @@ export class CompositeDataProvider implements DataProvider {
             };
         };
 
-        for (const linkCount of linkKountsResponse) {
+        for (const linkCount of lists) {
             for (const lCount of linkCount) {
                 if (!dictionary[lCount.id]) {
                     dictionary[lCount.id] = lCount;
@@ -267,12 +409,12 @@ export class CompositeDataProvider implements DataProvider {
         return Object.keys(dictionary).map(key => dictionary[key]);
     }
 
-    private mergeLinkElements = (models: Dictionary<ElementModel>[]): Dictionary<ElementModel> => {
-        return this.mergeElementInfo(models);
+    private mergeLinkElements = (response: CompositeResponse<Dictionary<ElementModel>>[]): Dictionary<ElementModel> => {
+        return this.mergeElementInfo(response);
     }
 
-    private mergeFilter = (models: Dictionary<ElementModel>[]): Dictionary<ElementModel> => {
-        return this.mergeElementInfo(models);
+    private mergeFilter = (response: CompositeResponse<Dictionary<ElementModel>>[]): Dictionary<ElementModel> => {
+        return this.mergeElementInfo(response);
     }
 
     private classTree2Array(models: ClassModel[]): ClassModel[] {
