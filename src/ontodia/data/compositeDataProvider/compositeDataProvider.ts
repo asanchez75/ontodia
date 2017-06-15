@@ -46,74 +46,64 @@ export class CompositeDataProvider implements DataProvider {
         });
     }
 
+    private executMethod<ResponseType>(
+        responsePromise: Promise<ResponseType>,
+        dpName: string,
+    ): Promise<CompositeResponse<ResponseType>> {
+        return responsePromise.then(
+            response => ({
+                dataSourceName: dpName,
+                response: response,
+            }),
+        ).catch(
+            error => {
+                console.error(error);
+                return {
+                    dataSourceName: dpName,
+                    response: undefined,
+                };
+            },
+        );
+    };
+
     classTree(): Promise<ClassModel[]> {
         const resultPromises = this.dataProviders.map(
-            dp => dp.dataProvider.classTree().then(
-                response => ({
-                    dataSourceName: dp.name,
-                    response: response,
-                }),
-            ),
+            dp => this.executMethod(dp.dataProvider.classTree(), dp.name),
         );
         return Promise.all(resultPromises).then(this.mergeClassTree);
     }
 
     propertyInfo(params: { propertyIds: string[] }): Promise<Dictionary<PropertyModel>> {
         const resultPromises = this.dataProviders.map(
-            dp => dp.dataProvider.propertyInfo(params).then(
-                response => ({
-                    dataSourceName: dp.name,
-                    response: response,
-                }),
-            ),
+            dp => this.executMethod(dp.dataProvider.propertyInfo(params), dp.name),
         );
         return Promise.all(resultPromises).then(this.mergePropertyInfo);
     }
 
     classInfo(params: { classIds: string[] }): Promise<ClassModel[]> {
         const resultPromises = this.dataProviders.map(
-            dp => dp.dataProvider.classInfo(params).then(
-                response => ({
-                    dataSourceName: dp.name,
-                    response: response,
-                }),
-            ),
+            dp => this.executMethod(dp.dataProvider.classInfo(params), dp.name),
         );
         return Promise.all(resultPromises).then(this.mergeClassInfo);
     }
 
     linkTypesInfo(params: {linkTypeIds: string[]}): Promise<LinkType[]> {
         const resultPromises = this.dataProviders.map(
-            dp => dp.dataProvider.linkTypesInfo(params).then(
-                response => ({
-                    dataSourceName: dp.name,
-                    response: response,
-                }),
-            ),
+            dp => this.executMethod(dp.dataProvider.linkTypesInfo(params), dp.name),
         );
         return Promise.all(resultPromises).then(this.mergeLinkTypesInfo);
     }
 
     linkTypes(): Promise<LinkType[]> {
         const resultPromises = this.dataProviders.map(
-            dp => dp.dataProvider.linkTypes().then(
-                response => ({
-                    dataSourceName: dp.name,
-                    response: response,
-                }),
-            ),
+            dp => this.executMethod(dp.dataProvider.linkTypes(), dp.name),
         );
         return Promise.all(resultPromises).then(this.mergeLinkTypes);
     }
 
     elementInfo(params: { elementIds: string[]; }): Promise<Dictionary<ElementModel>> {
         const resultPromises = this.dataProviders.map(
-            dp => dp.dataProvider.elementInfo(params).then(
-                response => ({
-                    dataSourceName: dp.name,
-                    response: response,
-                }),
-            ),
+            dp => this.executMethod(dp.dataProvider.elementInfo(params), dp.name),
         );
         return Promise.all(resultPromises).then(this.mergeElementInfo);
     }
@@ -123,24 +113,14 @@ export class CompositeDataProvider implements DataProvider {
         linkTypeIds: string[];
     }): Promise<LinkModel[]> {
         const resultPromises = this.dataProviders.map(
-            dp => dp.dataProvider.linksInfo(params).then(
-                response => ({
-                    dataSourceName: dp.name,
-                    response: response,
-                }),
-            ),
+            dp => this.executMethod(dp.dataProvider.linksInfo(params), dp.name),
         );
         return Promise.all(resultPromises).then(this.mergeLinksInfo);
     }
 
     linkTypesOf(params: { elementId: string; }): Promise<LinkCount[]> {
         const resultPromises = this.dataProviders.map(
-            dp => dp.dataProvider.linkTypesOf(params).then(
-                response => ({
-                    dataSourceName: dp.name,
-                    response: response,
-                }),
-            ),
+            dp => this.executMethod(dp.dataProvider.linkTypesOf(params), dp.name),
         );
         return Promise.all(resultPromises).then(this.mergeLinkTypesOf);
     };
@@ -153,30 +133,20 @@ export class CompositeDataProvider implements DataProvider {
         direction?: 'in' | 'out';
     }): Promise<Dictionary<ElementModel>> {
         const resultPromises = this.dataProviders.map(
-            dp => dp.dataProvider.linkElements(params).then(
-                response => ({
-                    dataSourceName: dp.name,
-                    response: response,
-                }),
-            ),
+            dp => this.executMethod(dp.dataProvider.linkElements(params), dp.name),
         );
         return Promise.all(resultPromises).then(this.mergeLinkElements);
     }
 
     filter(params: FilterParams): Promise<Dictionary<ElementModel>> {
         const resultPromises = this.dataProviders.map(
-            dp => dp.dataProvider.filter(params).then(
-                response => ({
-                    dataSourceName: dp.name,
-                    response: response,
-                }),
-            ),
+            dp => this.executMethod(dp.dataProvider.filter(params), dp.name),
         );
         return Promise.all(resultPromises).then(this.mergeFilter);
     };
 
     private mergeClassTree = (response: CompositeResponse<ClassModel[]>[]): ClassModel[] => {
-        const lists = response.map(r => this.classTree2Array(r.response));
+        const lists = response.filter(r => r.response).map(r => this.classTree2Array(r.response));
         const dictionary: Dictionary<ClassModel> = {};
         const topLevelModels: Dictionary<ClassModel> = {};
         const childrenMap: Dictionary<string[]> = {};
@@ -221,7 +191,7 @@ export class CompositeDataProvider implements DataProvider {
         response: CompositeResponse<Dictionary<PropertyModel>>[],
     ): Dictionary<PropertyModel> => {
         const result: Dictionary<PropertyModel> = {};
-        const props = response.map(r => r.response);
+        const props = response.filter(r => r.response).map(r => r.response);
         for (const model of props) {
             const keys = Object.keys(model);
             for (const key of keys) {
@@ -237,7 +207,7 @@ export class CompositeDataProvider implements DataProvider {
     }
 
     private mergeClassInfo(response: CompositeResponse<ClassModel[]>[]): ClassModel[] {
-        const dictionaries = response.map(r => r.response);
+        const dictionaries = response.filter(r => r.response).map(r => r.response);
         const dictionary: Dictionary<ClassModel> = {};
 
         for (const models of dictionaries) {
@@ -253,7 +223,7 @@ export class CompositeDataProvider implements DataProvider {
     }
 
     private mergeLinkTypesInfo = (response: CompositeResponse<LinkType[]>[]): LinkType[] => {
-        const lists = response.map(r => r.response);
+        const lists = response.filter(r => r.response).map(r => r.response);
 
         const mergeLinkType = (a: LinkType, b: LinkType): LinkType => {
             return {
@@ -310,10 +280,13 @@ export class CompositeDataProvider implements DataProvider {
             };
         };
 
-        const dictionaries = response.map(r => r.response);
+        const dictionaries = response.filter(r => r.response).map(r => r.response);
         const dictionary: Dictionary<ElementModel> = {};
 
         for (const resp of response) {
+            if (!resp.response) {
+                continue;
+            }
             const list = Object.keys(resp.response).map(k => resp.response[k]);
 
             for (const em of list) {
@@ -366,7 +339,7 @@ export class CompositeDataProvider implements DataProvider {
     }
 
     private mergeLinksInfo(response: CompositeResponse<LinkModel[]>[]): LinkModel[] {
-        const lists = response.map(r => r.response);
+        const lists = response.filter(r => r.response).map(r => r.response);
         const resultInfo: LinkModel[] = [];
 
         function compareLinksInfo (a: LinkModel, b: LinkModel): boolean {
@@ -386,7 +359,7 @@ export class CompositeDataProvider implements DataProvider {
     }
 
     private mergeLinkTypesOf(response: CompositeResponse<LinkCount[]>[]): LinkCount[] {
-        const lists = response.map(r => r.response);
+        const lists = response.filter(r => r.response).map(r => r.response);
         const dictionary: Dictionary<LinkCount> = {};
 
         const mergeCounts = (a: LinkCount, b: LinkCount): LinkCount => {
