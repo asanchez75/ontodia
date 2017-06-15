@@ -29,6 +29,7 @@ function onWorkspaceMounted(workspace: Workspace) {
                     type: 'text/turtle',
                 },
             ],
+            fetchDataIfPossible: true,
         }),
     });
 }

@@ -1,5 +1,6 @@
 import * as $rdf from 'rdflib';
 import { DataProvider, FilterParams } from '../provider';
+import 'whatwg-fetch';
 import {
     LocalizedString, Dictionary, ClassModel, LinkType, ElementModel,
     LinkModel, LinkCount, PropertyModel, Property,
@@ -11,8 +12,9 @@ const DEFAULT_STOREG_URI = 'https://ontodia.org/localData.rdf';
 export class RDFDataProvider implements DataProvider {
     private rdfStore: $rdf.IndexedFormula;
     private prefs: any;
+    private fetchData: boolean = false;
 
-    constructor(params: { data: { content: string, type?: string, uri?: string}[] }) {
+    constructor(params: { data: { content: string, type?: string, uri?: string}[], fetchDataIfPossible?: boolean }) {
         this.rdfStore = $rdf.graph();
         try {
             for (const data of params.data) {
@@ -29,9 +31,11 @@ export class RDFDataProvider implements DataProvider {
                 XSD: $rdf.Namespace('http://www.w3.org/2001/XMLSchema#'),
                 OWL: $rdf.Namespace('http://www.w3.org/2002/07/owl#'),
             };
+
         } catch (err) {
             console.error(err);
         }
+        this.fetchData = params.fetchDataIfPossible;
     }
 
     classTree(): Promise<ClassModel[]> {
@@ -134,8 +138,9 @@ export class RDFDataProvider implements DataProvider {
         return Promise.resolve(linkTypes);
     }
 
-    elementInfo(params: { elementIds: string[]; }): Promise<Dictionary<ElementModel>> {
+    elementInfo(params: { elementIds: string[] }): Promise<Dictionary<ElementModel>> {
         const result: Dictionary<ElementModel> = {};
+        const fetchThreads: Promise<boolean>[] = [];
         for (const id of params.elementIds) {
             const el = $rdf.sym(id);
             if (this.rdfStore.any(el, undefined, undefined)) {
@@ -145,9 +150,36 @@ export class RDFDataProvider implements DataProvider {
                     label: { values: this.getLabels(el) },
                     properties: this.getProps(el),
                 };
+            } else if (this.fetchData) {
+                fetchThreads.push(fetchFile({
+                    url: id,
+                }).then(body => {
+                    if (body) {
+                        $rdf.parse(
+                            body,
+                            this.rdfStore,
+                            DEFAULT_STOREG_URI,
+                            'application/rdf+xml',
+                        );
+                        if (this.rdfStore.any(el, undefined, undefined)) {
+                            result[id] = {
+                                id: id,
+                                types: this.getTypes(el),
+                                label: { values: this.getLabels(el) },
+                                properties: this.getProps(el),
+                            };
+                            return true;
+                        }
+                        return false;
+                    } else {
+                        return false;
+                    }
+                }));
             }
         }
-        return Promise.resolve(result);
+        return Promise.all(fetchThreads).then(() => {
+            return result;
+        });
     }
 
     linksInfo(params: {
@@ -370,3 +402,30 @@ export class RDFDataProvider implements DataProvider {
 }
 
 export default RDFDataProvider;
+
+function fetchFile(params: {
+    url: string,
+    headers?: any,
+}) {
+    return fetch(params.url, {
+        method: 'GET',
+        credentials: 'same-origin',
+        mode: 'cors',
+        cache: 'default',
+        headers: params.headers || {
+            'Accept': 'application/rdf+xml',
+        },
+    }).then(response => {
+        if (response.ok) {
+            return response.text();
+        } else {
+            const error = new Error(response.statusText);
+            (<any> error).response = response;
+            console.error(error);
+            return undefined;
+        }
+    }).catch(error => {
+        console.error(error);
+        return undefined;
+    });
+}

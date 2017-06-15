@@ -5,6 +5,11 @@ declare module "rdflib" {
 
     function Namespace(namespaces: string): () => NamedNode;
 
+    class Fetcher {
+        constructor(store: IndexedFormula, timeout: number);
+        nowOrWhenFetched: (url: string, callback: (ok: boolean, body: string, xhr: string) => void) => void;
+    }
+
     function sym(id: string): NamedNode;
 
     class IndexedFormula extends Formula {
