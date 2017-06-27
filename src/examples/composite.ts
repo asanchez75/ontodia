@@ -34,6 +34,7 @@ function onWorkspaceMounted(workspace: Workspace) {
                 type: 'text/turtle',
             },
         ],
+        dataFetching: true,
     });
 
     const sparqlDataProvider = new SparqlDataProvider({
@@ -45,24 +46,17 @@ function onWorkspaceMounted(workspace: Workspace) {
         queryMethod: SparqlQueryMethod.GET,
     }, OWLStatsSettings);
 
-    const dbPediaDataProvider = new SparqlDataProvider({
-        endpointUrl: 'http://dbpedia.org/sparql',
-        imagePropertyUris: [
-            'http://xmlns.com/foaf/0.1/depiction',
-            'http://xmlns.com/foaf/0.1/img',
-        ],
-        queryMethod: SparqlQueryMethod.GET,
-    }, DBPediaSettings);
 
     const layoutData = tryLoadLayoutFromLocalStorage();
     model.importLayout({
         layoutData,
         validateLinks: true,
         dataProvider: new CompositeDataProvider([
-            { name: 'RDF Data Provider', dataProvider: rdfDataProvider },
             { name: 'SparQL Data Provider', dataProvider: sparqlDataProvider },
-            { name: 'DBPedia Data Provider', dataProvider: dbPediaDataProvider },
-        ]),
+            { name: 'RDF Data Provider', dataProvider: rdfDataProvider },
+        ], {
+            mergeMode: 'sequentialFetching',
+        }),
     });
 }
 

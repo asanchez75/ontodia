@@ -29,6 +29,10 @@ module.exports = {
             'handlebars': path.join(npmDir, 'handlebars', 'dist', 'handlebars.min.js'),
         },
     },
+    node: {
+        fs: "empty",
+        child_process: "empty"
+    },
     module: {
         loaders: [
             {test: /\.ts$|\.tsx$/, loader: 'ts-loader'},

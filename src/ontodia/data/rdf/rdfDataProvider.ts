@@ -8,21 +8,34 @@ import {
 
 const DEFAULT_STOREG_TYPE = 'text/turtle';
 const DEFAULT_STOREG_URI = 'https://ontodia.org/localData.rdf';
+const STORAGE_TYPES = [
+    'text/turtle',
+    'application/rdf+xml',
+    'application/xhtml+xml',
+    'text/n3',
+    'text/html',
+    'application/ld+json',
+];
 
 export class RDFDataProvider implements DataProvider {
     private rdfStore: $rdf.IndexedFormula;
     private prefs: any;
-    private fetchData: boolean = false;
+    private checkingElementMap: Dictionary<(Promise<boolean> | boolean)> = {};
+    private dataFetching: boolean = false;
 
-    constructor(params: { data: { content: string, type?: string, uri?: string}[], fetchDataIfPossible?: boolean }) {
+    constructor(params: { data: { content: string, type?: string, uri?: string}[], dataFetching?: boolean }) {
         this.rdfStore = $rdf.graph();
         try {
             for (const data of params.data) {
-                $rdf.parse(
-                    data.content,
-                    this.rdfStore, data.uri || DEFAULT_STOREG_URI,
-                    data.type || DEFAULT_STOREG_TYPE,
-                );
+                try {
+                    $rdf.parse(
+                        data.content,
+                        this.rdfStore, data.uri || DEFAULT_STOREG_URI,
+                        data.type || DEFAULT_STOREG_TYPE,
+                    );
+                } catch (error) {
+                    console.error(error);
+                }
             }
             this.prefs = {
                 RDF: $rdf.Namespace('http://www.w3.org/1999/02/22-rdf-syntax-ns#'),
@@ -35,7 +48,7 @@ export class RDFDataProvider implements DataProvider {
         } catch (err) {
             console.error(err);
         }
-        this.fetchData = params.fetchDataIfPossible;
+        this.dataFetching = params.dataFetching;
     }
 
     classTree(): Promise<ClassModel[]> {
@@ -139,45 +152,28 @@ export class RDFDataProvider implements DataProvider {
     }
 
     elementInfo(params: { elementIds: string[] }): Promise<Dictionary<ElementModel>> {
-        const result: Dictionary<ElementModel> = {};
-        const fetchThreads: Promise<boolean>[] = [];
-        for (const id of params.elementIds) {
-            const el = $rdf.sym(id);
-            if (this.rdfStore.any(el, undefined, undefined)) {
-                result[id] = {
-                    id: id,
-                    types: this.getTypes(el),
-                    label: { values: this.getLabels(el) },
-                    properties: this.getProps(el),
-                };
-            } else if (this.fetchData) {
-                fetchThreads.push(fetchFile({
-                    url: id,
-                }).then(body => {
-                    if (body) {
-                        $rdf.parse(
-                            body,
-                            this.rdfStore,
-                            DEFAULT_STOREG_URI,
-                            'application/rdf+xml',
-                        );
-                        if (this.rdfStore.any(el, undefined, undefined)) {
-                            result[id] = {
-                                id: id,
-                                types: this.getTypes(el),
-                                label: { values: this.getLabels(el) },
-                                properties: this.getProps(el),
-                            };
-                            return true;
-                        }
-                        return false;
-                    } else {
-                        return false;
-                    }
-                }));
+        const dataUpdateThreads: Promise<boolean>[] = [];
+
+        for (const elementId of params.elementIds) {
+            const el = $rdf.sym(elementId);
+            if (this.dataFetching && !this.rdfStore.any(el, undefined, undefined)) {
+                dataUpdateThreads.push(this.checkElement(elementId));
             }
         }
-        return Promise.all(fetchThreads).then(() => {
+
+        return Promise.all(dataUpdateThreads).then((fetchedModels) => {
+            const result: Dictionary<ElementModel> = {};
+            for (const id of params.elementIds) {
+                const el = $rdf.sym(id);
+                if (this.rdfStore.any(el, undefined, undefined)) {
+                    result[id] = {
+                        id: id,
+                        types: this.getTypes(el),
+                        label: { values: this.getLabels(el) },
+                        properties: this.getProps(el),
+                    };
+                }
+            }
             return result;
         });
     }
@@ -186,24 +182,34 @@ export class RDFDataProvider implements DataProvider {
         elementIds: string[];
         linkTypeIds: string[];
     }): Promise<LinkModel[]> {
-        const links: LinkModel[] = [];
+        const dataUpdateThreads: Promise<boolean>[] = [];
 
-        for (const sourceId of params.elementIds) {
-            const source = $rdf.sym(sourceId);
-            for (const targetId of params.elementIds) {
-                const target = $rdf.sym(targetId);
-                const obtainedlinks = this.rdfStore.each(source, undefined, target);
-                for (const l of obtainedlinks) {
-                    links.push({
-                        linkTypeId: l.value,
-                        sourceId: sourceId,
-                        targetId: targetId,
-                    });
-                }
+        for (const elementId of params.elementIds) {
+            const el = $rdf.sym(elementId);
+            if (this.dataFetching && !this.rdfStore.any(el, undefined, undefined)) {
+                dataUpdateThreads.push(this.checkElement(elementId));
             }
         }
 
-        return Promise.resolve(links);
+        return Promise.all(dataUpdateThreads).then(() => {
+            const links: LinkModel[] = [];
+            for (const sourceId of params.elementIds) {
+                const source = $rdf.sym(sourceId);
+                for (const targetId of params.elementIds) {
+                    const target = $rdf.sym(targetId);
+                    const obtainedlinks = this.rdfStore.each(source, undefined, target);
+                    for (const l of obtainedlinks) {
+                        links.push({
+                            linkTypeId: l.value,
+                            sourceId: sourceId,
+                            targetId: targetId,
+                        });
+                    }
+                }
+            }
+
+            return links;
+        });
     }
 
     linkTypesOf(params: { elementId: string; }): Promise<LinkCount[]> {
@@ -327,6 +333,65 @@ export class RDFDataProvider implements DataProvider {
         return Promise.resolve(result);
     };
 
+    private checkElement (elementId: string): Promise<boolean> {
+        let typePointer = 0;
+
+        const recursivePart = (): Promise<boolean> => {
+            const acceptType = STORAGE_TYPES[typePointer++];
+
+            if (acceptType) {
+                return fetchFile({
+                    url: elementId,
+                    headers: {
+                        'Accept': acceptType,
+                    },
+                }).then(body => {
+                    if (body) {
+                        let parsingError = false;
+                        try {
+                            $rdf.parse(
+                                body,
+                                this.rdfStore,
+                                DEFAULT_STOREG_URI,
+                                acceptType,
+                            );
+                        } catch (error) {
+                            parsingError = true;
+                            console.warn('Getting file in ' + acceptType + 'format failed');
+                        }
+                        if (parsingError) {
+                            return recursivePart();
+                        } else {
+                            const el = $rdf.sym(elementId);
+                            if (this.rdfStore.any(el, undefined, undefined)) {
+                                return true;
+                            } else {
+                                return false;
+                            }
+                        }
+                    } else {
+                        return false;
+                    }
+                });
+            } else {
+                return Promise.resolve(false);
+            }
+        };
+
+        if (this.checkingElementMap[elementId] === undefined) {
+            const promise = recursivePart().then(result => {
+                this.checkingElementMap[elementId] = result;
+                return result;
+            });
+            this.checkingElementMap[elementId] = promise;
+            return promise;
+        } else if (this.checkingElementMap[elementId] instanceof Promise) {
+            return <Promise<boolean>> this.checkingElementMap[elementId];
+        } else {
+            return Promise.resolve(<boolean> this.checkingElementMap[elementId]);
+        }
+    }
+
     private namedNode2ElementModel (el: $rdf.NamedNode): ElementModel {
         return {
             id: el.value,
@@ -407,15 +472,18 @@ function fetchFile(params: {
     url: string,
     headers?: any,
 }) {
-    return fetch(params.url, {
-        method: 'GET',
-        credentials: 'same-origin',
-        mode: 'cors',
-        cache: 'default',
-        headers: params.headers || {
-            'Accept': 'application/rdf+xml',
-        },
-    }).then(response => {
+    return fetch(
+        '/lod-proxy/' + params.url,
+        {
+            method: 'GET',
+            credentials: 'same-origin',
+            mode: 'cors',
+            cache: 'default',
+            headers: params.headers || {
+                'Accept': 'application/rdf+xml',
+            },
+        }
+    ).then(response => {
         if (response.ok) {
             return response.text();
         } else {

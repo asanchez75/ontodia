@@ -41,6 +41,10 @@ module.exports = {
             {test: /\.png$/, loader: 'url-loader?mimetype=image/png'},
         ],
     },
+    node: {
+        fs: "empty",
+        child_process: "empty"
+    },
     plugins: [
         new HtmlWebpackPlugin({
             filename: 'rdf.html',
@@ -118,12 +122,19 @@ module.exports = {
     devtool: '#source-map',
     devServer: {
         proxy: {
-            "/sparql-endpoint**": {
+            '/sparql-endpoint**': {
                 target: process.env.SPARQL_ENDPOINT,
                 pathRewrite: {'/sparql-endpoint' : ''},
                 changeOrigin: true,
                 secure: false,
             },
+            '/lod-proxy/**': {
+                target: process.env.LOD_PROXY,
+                // pathRewrite: {'/lod-proxy/*' : ''},
+                changeOrigin: true,
+                secure: false,
+            },
         },
+        
     },
 };

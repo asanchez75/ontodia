@@ -25,11 +25,17 @@ function isDefenition(dp: DataProvider | DPDefinition): dp is DPDefinition {
     return (<DPDefinition> dp).name !== undefined && (<DPDefinition> dp).dataProvider !== undefined;
 }
 
+export type MergeMode = 'fetchAll' | 'sequentialFetching';
+
 export class CompositeDataProvider implements DataProvider {
     public dataProviders: DPDefinition[];
+    public mergeMode: MergeMode = 'fetchAll';
 
     constructor(
         dataProviders: (DataProvider | DPDefinition)[],
+        params?: {
+            mergeMode?: MergeMode,
+        },
     ) {
         let dpCounter = 1;
         this.dataProviders = dataProviders.map(dp => {
@@ -44,9 +50,13 @@ export class CompositeDataProvider implements DataProvider {
                 };
             }
         });
+
+        if (params && params.mergeMode) {
+            this.mergeMode = params.mergeMode;
+        }
     }
 
-    private executMethod<ResponseType>(
+    private processResults<ResponseType>(
         responsePromise: Promise<ResponseType>,
         dpName: string,
     ): Promise<CompositeResponse<ResponseType>> {
@@ -66,63 +76,175 @@ export class CompositeDataProvider implements DataProvider {
         );
     };
 
+    private queueProcessResults<ResponseType>(
+        callBack: (previousResult: ResponseType, dp: DPDefinition) => Promise<ResponseType>,
+    ): Promise<CompositeResponse<ResponseType>[]> {
+        let counter = 0;
+        let responseList: CompositeResponse<ResponseType>[] = [];
+
+        const recursiveCall = (result?: ResponseType): Promise<CompositeResponse<ResponseType>[]> => {
+            if (this.dataProviders.length > counter) {
+                const dp = this.dataProviders[counter++];
+                const callBackResult = callBack(result, dp);
+
+                if (!callBackResult) {
+                    return Promise.resolve(responseList);
+                }
+
+                return callBackResult.then(newResult => {
+                    responseList.push({
+                        dataSourceName: dp.name,
+                        response: newResult,
+                    });
+                    return recursiveCall(newResult);
+                }).catch(error => {
+                    console.error(error);
+                    return recursiveCall(result);
+                });
+            } else {
+                return Promise.resolve(responseList);
+            }
+        };
+
+        return recursiveCall();
+    };
+
     classTree(): Promise<ClassModel[]> {
         const resultPromises = this.dataProviders.map(
-            dp => this.executMethod(dp.dataProvider.classTree(), dp.name),
+            dp => this.processResults(dp.dataProvider.classTree(), dp.name),
         );
         return Promise.all(resultPromises).then(this.mergeClassTree);
     }
 
     propertyInfo(params: { propertyIds: string[] }): Promise<Dictionary<PropertyModel>> {
-        const resultPromises = this.dataProviders.map(
-            dp => this.executMethod(dp.dataProvider.propertyInfo(params), dp.name),
-        );
-        return Promise.all(resultPromises).then(this.mergePropertyInfo);
+        if (this.mergeMode === 'fetchAll') {
+            const resultPromises = this.dataProviders.map(
+                dp => this.processResults(dp.dataProvider.propertyInfo(params), dp.name),
+            );
+            return Promise.all(resultPromises).then(this.mergePropertyInfo);
+        } else {
+            let propertyIds = params.propertyIds;
+            return this.queueProcessResults((previousResult: Dictionary<PropertyModel>, dp: DPDefinition) => {
+                propertyIds = propertyIds.filter(id => !previousResult || !previousResult[id]);
+                if (propertyIds.length > 0) {
+                    return dp.dataProvider.propertyInfo({ propertyIds: propertyIds });
+                } else {
+                    return undefined;
+                }
+            }).then(this.mergePropertyInfo);
+        }
     }
 
     classInfo(params: { classIds: string[] }): Promise<ClassModel[]> {
-        const resultPromises = this.dataProviders.map(
-            dp => this.executMethod(dp.dataProvider.classInfo(params), dp.name),
-        );
-        return Promise.all(resultPromises).then(this.mergeClassInfo);
+        if (this.mergeMode === 'fetchAll') {
+            const resultPromises = this.dataProviders.map(
+                dp => this.processResults(dp.dataProvider.classInfo(params), dp.name),
+            );
+            return Promise.all(resultPromises).then(this.mergeClassInfo);
+        } else {
+            let classIds = params.classIds;
+            return this.queueProcessResults((previousResult: ClassModel[], dp: DPDefinition) => {
+                classIds = classIds.filter(id => !previousResult || previousResult.map(cm => cm.id).indexOf(id) === -1);
+                if (classIds.length > 0) {
+                    return dp.dataProvider.classInfo({ classIds: classIds });
+                } else {
+                    return undefined;
+                }
+            }).then(this.mergeClassInfo);
+        }
     }
 
     linkTypesInfo(params: {linkTypeIds: string[]}): Promise<LinkType[]> {
-        const resultPromises = this.dataProviders.map(
-            dp => this.executMethod(dp.dataProvider.linkTypesInfo(params), dp.name),
-        );
-        return Promise.all(resultPromises).then(this.mergeLinkTypesInfo);
+        if (this.mergeMode === 'fetchAll') {
+            const resultPromises = this.dataProviders.map(
+                dp => this.processResults(dp.dataProvider.linkTypesInfo(params), dp.name),
+            );
+            return Promise.all(resultPromises).then(this.mergeLinkTypesInfo);
+        } else {
+            let linkTypeIds = params.linkTypeIds;
+            return this.queueProcessResults((previousResult: LinkType[], dp: DPDefinition) => {
+                linkTypeIds = linkTypeIds.filter(id => !previousResult || previousResult.map(lt => lt.id).indexOf(id) === -1);
+                if (linkTypeIds.length > 0) {
+                    return dp.dataProvider.linkTypesInfo({ linkTypeIds: linkTypeIds });
+                } else {
+                    return undefined;
+                }
+            }).then(this.mergeLinkTypesInfo);
+        }
     }
 
     linkTypes(): Promise<LinkType[]> {
         const resultPromises = this.dataProviders.map(
-            dp => this.executMethod(dp.dataProvider.linkTypes(), dp.name),
+            dp => this.processResults(dp.dataProvider.linkTypes(), dp.name),
         );
         return Promise.all(resultPromises).then(this.mergeLinkTypes);
     }
 
     elementInfo(params: { elementIds: string[]; }): Promise<Dictionary<ElementModel>> {
-        const resultPromises = this.dataProviders.map(
-            dp => this.executMethod(dp.dataProvider.elementInfo(params), dp.name),
-        );
-        return Promise.all(resultPromises).then(this.mergeElementInfo);
+        if (this.mergeMode === 'fetchAll') {
+            const resultPromises = this.dataProviders.map(
+                dp => this.processResults(dp.dataProvider.elementInfo(params), dp.name),
+            );
+            return Promise.all(resultPromises).then(this.mergeElementInfo);
+        } else {
+            let elementIds = params.elementIds;
+            return this.queueProcessResults((previousResult: Dictionary<ElementModel>, dp: DPDefinition) => {
+                elementIds = elementIds.filter(id => !previousResult || !previousResult[id]);
+                if (elementIds.length > 0) {
+                    return dp.dataProvider.elementInfo({ elementIds: elementIds });
+                } else {
+                    return undefined;
+                }
+            }).then(this.mergeElementInfo);
+        }
     }
 
     linksInfo(params: {
         elementIds: string[];
         linkTypeIds: string[];
     }): Promise<LinkModel[]> {
-        const resultPromises = this.dataProviders.map(
-            dp => this.executMethod(dp.dataProvider.linksInfo(params), dp.name),
-        );
-        return Promise.all(resultPromises).then(this.mergeLinksInfo);
+        if (this.mergeMode === 'fetchAll') {
+            const resultPromises = this.dataProviders.map(
+                dp => this.processResults(dp.dataProvider.linksInfo(params), dp.name),
+            );
+            return Promise.all(resultPromises).then(this.mergeLinksInfo);
+        } else {
+            let elementIds = params.elementIds;
+            return this.queueProcessResults((previousResult: LinkModel[], dp: DPDefinition) => {
+                elementIds = elementIds.filter(id => {
+                    if (previousResult) {
+                        for (const linkModel of previousResult) {
+                            if (linkModel.sourceId === id || linkModel.targetId === id) {
+                                return false;
+                            }
+                        }
+                    }
+                    return true;
+                });
+                if (elementIds.length > 0) {
+                    return dp.dataProvider.linksInfo({ elementIds: elementIds, linkTypeIds: params.linkTypeIds });
+                } else {
+                    return undefined;
+                }
+            }).then(this.mergeLinksInfo);
+        }
     }
 
     linkTypesOf(params: { elementId: string; }): Promise<LinkCount[]> {
-        const resultPromises = this.dataProviders.map(
-            dp => this.executMethod(dp.dataProvider.linkTypesOf(params), dp.name),
-        );
-        return Promise.all(resultPromises).then(this.mergeLinkTypesOf);
+        if (this.mergeMode === 'fetchAll') {
+            const resultPromises = this.dataProviders.map(
+                dp => this.processResults(dp.dataProvider.linkTypesOf(params), dp.name),
+            );
+            return Promise.all(resultPromises).then(this.mergeLinkTypesOf);
+        } else {
+            return this.queueProcessResults((previousResult: LinkCount[], dp: DPDefinition) => {
+                if (!previousResult || previousResult && previousResult.length === 0) {
+                    return dp.dataProvider.linkTypesOf(params);
+                } else {
+                    return undefined;
+                }
+            }).then(this.mergeLinkTypesOf);
+        }
     };
 
     linkElements(params: {
@@ -132,17 +254,37 @@ export class CompositeDataProvider implements DataProvider {
         offset: number;
         direction?: 'in' | 'out';
     }): Promise<Dictionary<ElementModel>> {
-        const resultPromises = this.dataProviders.map(
-            dp => this.executMethod(dp.dataProvider.linkElements(params), dp.name),
-        );
-        return Promise.all(resultPromises).then(this.mergeLinkElements);
+        if (this.mergeMode === 'fetchAll') {
+            const resultPromises = this.dataProviders.map(
+                dp => this.processResults(dp.dataProvider.linkElements(params), dp.name),
+            );
+            return Promise.all(resultPromises).then(this.mergeLinkElements);
+        } else {
+            return this.queueProcessResults((previousResult: Dictionary<ElementModel>, dp: DPDefinition) => {
+                if (!previousResult || previousResult && Object.keys(previousResult).length === 0) {
+                    return dp.dataProvider.linkElements(params);
+                } else {
+                    return undefined;
+                }
+            }).then(this.mergeLinkElements);
+        }
     }
 
     filter(params: FilterParams): Promise<Dictionary<ElementModel>> {
-        const resultPromises = this.dataProviders.map(
-            dp => this.executMethod(dp.dataProvider.filter(params), dp.name),
-        );
-        return Promise.all(resultPromises).then(this.mergeFilter);
+        if (this.mergeMode === 'fetchAll') {
+            const resultPromises = this.dataProviders.map(
+                dp => this.processResults(dp.dataProvider.filter(params), dp.name),
+            );
+            return Promise.all(resultPromises).then(this.mergeFilter);
+        } else {
+            return this.queueProcessResults((previousResult: Dictionary<ElementModel>, dp: DPDefinition) => {
+                if (!previousResult || previousResult && Object.keys(previousResult).length === 0) {
+                    return dp.dataProvider.filter(params);
+                } else {
+                    return undefined;
+                }
+            }).then(this.mergeFilter);
+        }
     };
 
     private mergeClassTree = (response: CompositeResponse<ClassModel[]>[]): ClassModel[] => {
