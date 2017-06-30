@@ -27,6 +27,23 @@ export interface Props {
     viewOptions?: DiagramViewOptions;
     leftPanelInitiallyOpen?: boolean;
     rightPanelInitiallyOpen?: boolean;
+
+    /**
+     * Set of languages to display
+     */
+    languages?: LanguageSettings;
+    /**
+     * current selected language
+     */
+    selectedLanguage?: string;
+
+    /**
+     * Language set callback. If this function is set, language selection will work in controlled mode,
+     * otherwise, language selection will function in uncontrolled mode.
+     *
+     * @param language
+     */
+    onLanguageChange?: (language: string) => void;
 }
 
 export interface State {
@@ -38,6 +55,8 @@ export class Workspace extends Component<Props, State> {
         hideTutorial: true,
         leftPanelInitiallyOpen: true,
         rightPanelInitiallyOpen: false,
+        languages: [{code: 'en', label: 'English'}, {code: 'ru', label: 'Russian'}],
+        selectedLanguage: 'en',
     };
 
     private markup: WorkspaceMarkup;
@@ -49,7 +68,14 @@ export class Workspace extends Component<Props, State> {
         super(props);
         this.model = new DiagramModel(this.props.isViewOnly);
         this.diagram = new DiagramView(this.model, this.props.viewOptions);
+        this.diagram.setLanguage(this.props.selectedLanguage);
         this.state = {};
+    }
+
+    componentWillReceiveProps(prevProps: Props, newProps: Props) {
+        if (newProps.selectedLanguage !== this.diagram.getLanguage()) {
+            this.diagram.setLanguage(newProps.selectedLanguage);
+        }
     }
 
     render(): ReactElement<any> {
@@ -60,7 +86,7 @@ export class Workspace extends Component<Props, State> {
             leftPanelInitiallyOpen: this.props.leftPanelInitiallyOpen,
             rightPanelInitiallyOpen: this.props.rightPanelInitiallyOpen,
             searchCriteria: this.state.criteria,
-            onSearchCriteriaChanged: criteria => this.setState({criteria}),
+            onSearchCriteriaChanged: criteria => this.setState(criteria),
             toolbar: createElement<EditorToolbarProps>(EditorToolbar, {
                 onUndo: this.undo,
                 onRedo: this.redo,
@@ -76,6 +102,8 @@ export class Workspace extends Component<Props, State> {
                     this.forceLayout();
                     this.zoomToFit();
                 },
+                languages: this.props.languages,
+                selectedLanguage: this.diagram.getLanguage(),
                 onChangeLanguage: this.changeLanguage,
                 onShowTutorial: showTutorial,
                 onEditAtMainSite: () => this.props.onEditAtMainSite(this),
@@ -91,13 +119,13 @@ export class Workspace extends Component<Props, State> {
         if (this.props.isViewOnly) { return; }
 
         this.model.graph.on('add-to-filter', (element: Element, linkType?: FatLinkType, direction?: 'in' | 'out') => {
-            this.setState({
-                criteria: {
-                    refElementId: element.id,
-                    refElementLinkId: linkType && linkType.id,
-                    linkDirection: direction
-                }
-            });
+            this.setState( {
+                    criteria: {
+                        refElementId: element.id,
+                        refElementLinkId: linkType && linkType.id,
+                        linkDirection: direction,
+                    },
+                });
         });
 
         if (!this.props.hideTutorial) {
@@ -217,8 +245,15 @@ export class Workspace extends Component<Props, State> {
     }
 
     changeLanguage = (language: string) => {
-        this.diagram.setLanguage(language);
+        // if onLanguageChange is set we'll just forward the change
+        if (this.props.onLanguageChange) {
+            this.props.onLanguageChange(language);
+        } else {
+            this.diagram.setLanguage(language);
+            // since we have toolbar dependent on language, we're forcing update here
+            this.forceUpdate();
+        }
     }
 }
-
+export type LanguageSettings = {code: string, label: string}[];
 export default Workspace;

@@ -27,7 +27,7 @@ function onWorkspaceMounted(workspace: Workspace) {
                 'http://collection.britishmuseum.org/id/ontology/PX_has_main_representation',
                 'http://xmlns.com/foaf/0.1/img',
             ],
-            queryMethod: SparqlQueryMethod.GET
+            queryMethod: SparqlQueryMethod.GET,
         }, OWLStatsSettings),
     });
 }
@@ -39,6 +39,13 @@ const props: WorkspaceProps & ClassAttributes<Workspace> = {
         window.location.hash = saveLayoutToLocalStorage(layoutData);
         window.location.reload();
     },
+    languages: [
+        {code: 'en', label: 'English'},
+        {code: 'de', label: 'German'},
+        {code: 'ru', label: 'Russian'},
+    ],
+    selectedLanguage: 'ru',
+    /*onLanguageChange: (lang: string) => {console.log(lang); },*/
 };
 
 onPageLoad(container => ReactDOM.render(createElement(Workspace, props), container));

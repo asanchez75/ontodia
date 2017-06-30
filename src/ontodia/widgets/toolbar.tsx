@@ -1,5 +1,7 @@
 import * as React from 'react';
 
+import {LanguageSettings} from '../workspace/workspace';
+
 export interface Props {
     onSaveDiagram?: () => void;
     onSaveToSelf?: () => void;
@@ -15,6 +17,8 @@ export interface Props {
     onExportPNG: (link: HTMLAnchorElement) => void;
     onPrint: () => void;
     onShare?: () => void;
+    languages: LanguageSettings;
+    selectedLanguage: string;
     onChangeLanguage: (language: string) => void;
     onShowTutorial: () => void;
     isEmbeddedMode?: boolean;
@@ -140,13 +144,15 @@ export class EditorToolbar extends React.Component<Props, State> {
                         <span className='fa fa-print' aria-hidden='true' />
                     </button>
                     {(nonEmbedded && this.props.onShare) ? btnShare : undefined}
-                    <span className={`btn-group ${CLASS_NAME}__language-selector`}>
+                    {(this.props.languages.length > 1) ? <span className={`btn-group ${CLASS_NAME}__language-selector`}>
                         {nonEmbedded ? <label><span>Ontology Language:</span></label> : undefined}
-                        <select defaultValue='en' onChange={this.onChangeLanguage}>
-                            <option value='en'>English</option>
-                            <option value='ru'>Russian</option>
+
+                        <select value={this.props.selectedLanguage} onChange={this.onChangeLanguage}>
+                            {this.props.languages.map(language =>
+                                <option key={language.code} value={language.code}>{language.label}</option>)
+                            }
                         </select>
-                    </span>
+                    </span> : null}
                     {nonEmbedded ? btnHelp : undefined}
                 </div>
                 <a href='#' ref={link => { this.downloadImageLink = link; }}
