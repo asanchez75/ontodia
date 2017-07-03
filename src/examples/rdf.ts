@@ -29,7 +29,7 @@ function onWorkspaceMounted(workspace: Workspace) {
                     type: 'text/turtle',
                 },
             ],
-            dataFetching: true,
+            dataFetching: false,
         }),
     });
 }

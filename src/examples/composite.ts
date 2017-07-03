@@ -29,10 +29,10 @@ function onWorkspaceMounted(workspace: Workspace) {
 
     const rdfDataProvider = new RDFDataProvider({
         data: [
-            {
-                content: data,
-                type: 'text/turtle',
-            },
+            // {
+            //     content: data,
+            //     type: 'text/turtle',
+            // },
         ],
         dataFetching: true,
     });
