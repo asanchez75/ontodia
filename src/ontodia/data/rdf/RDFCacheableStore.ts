@@ -25,7 +25,8 @@ export function isNamedNode(el: Node): el is NamedNode {
 
 export class RDFCacheableStore {
     private rdfStorage: RDFStore;
-    private checkingElementMap: Dictionary<(Promise<boolean> | boolean)> = {};
+    private checkingElementMap: Dictionary<Promise<boolean>> = {};
+    private fetchingFileCatche: Dictionary<Promise<boolean>> = {};
     private labelsMap: Dictionary<Triple[]> = {};
     private countMap: Dictionary<number> = {};
     private elementTypes: Dictionary<Triple[]> = {};
@@ -46,17 +47,13 @@ export class RDFCacheableStore {
 
     parseData(data: string, contentType?: string, prefix?: string): Promise<boolean> {
         let resultPromise: Promise<boolean>;
-        if (contentType) {
-            try {
-                resultPromise = new RDFParser().parse(data, contentType).then((rdfGraph: any) => {
-                    this.rdfStorage.add(prefix || DEFAULT_STOREG_URI, rdfGraph);
-                    return this.enrichMaps(rdfGraph);
-                });
-            } catch (error) {
-                console.error(error);
-                resultPromise = Promise.resolve(false);
-            }
-        } else {
+        try {
+            resultPromise = new RDFParser().parse(data, contentType).then((rdfGraph: any) => {
+                this.rdfStorage.add(prefix || DEFAULT_STOREG_URI, rdfGraph);
+                return this.enrichMaps(rdfGraph);
+            });
+        } catch (error) {
+            console.error(error);
             resultPromise = Promise.resolve(false);
         }
 
@@ -92,7 +89,7 @@ export class RDFCacheableStore {
             if (this.labelsMap[id]) {
                 return Promise.resolve(true);
             } else {
-                if (this.checkingElementMap[id] === undefined) {
+                if (!this.checkingElementMap[id]) {
                     this.checkingElementMap[id] = this.rdfStorage.match(id, null, null).then(result => {
                         const resultArray = result.toArray();
                         if (resultArray.length === 0) {
@@ -109,11 +106,9 @@ export class RDFCacheableStore {
                             return false;
                         }
                     });
-                    return <Promise<boolean>> this.checkingElementMap[id];
-                } else if (this.checkingElementMap[id] instanceof Promise) {
-                    return <Promise<boolean>> this.checkingElementMap[id];
+                    return this.checkingElementMap[id];
                 } else {
-                    return Promise.resolve(<boolean> this.checkingElementMap[id]);
+                    return this.checkingElementMap[id];
                 }
             }
         } else {
@@ -176,6 +171,8 @@ export class RDFCacheableStore {
     }
 
     private downloadElement (elementId: string): Promise<boolean> {
+        const sharpIndex = elementId.indexOf('#');
+        const fileUrl = sharpIndex !== -1 ? elementId.substr(0, sharpIndex) : elementId;
         let typePointer = 0;
 
         const recursivePart = (): Promise<boolean> => {
@@ -212,10 +209,10 @@ export class RDFCacheableStore {
             }
         };
 
-        return recursivePart().then(result => {
-            this.checkingElementMap[elementId] = result;
-            return result;
-        });
+        if (!this.fetchingFileCatche[fileUrl]) {
+            this.fetchingFileCatche[fileUrl] = recursivePart();
+        }
+        return <Promise<boolean>> this.fetchingFileCatche[fileUrl];
     }
 }
 
