@@ -1,238 +1,10 @@
-// import * as $rdf from 'rdflib';
-import { RDFStore, RDFGraph, createStore, createGraph, Triple, Node, Literal, NamedNode } from 'rdf-ext';
-import * as N3Parser from 'rdf-parser-n3';
-
+import { Triple, Node } from 'rdf-ext';
+import { RDFCacheableStore, PrefixFactory, isLiteral, isNamedNode } from './RDFCacheableStore';
 import { DataProvider, FilterParams } from '../provider';
-import 'whatwg-fetch';
 import {
     LocalizedString, Dictionary, ClassModel, LinkType, ElementModel,
     LinkModel, LinkCount, PropertyModel, Property,
 } from '../model';
-
-const DEFAULT_STOREG_TYPE = 'text/turtle';
-const DEFAULT_STOREG_URI = 'https://ontodia.org/localData.rdf';
-const STORAGE_TYPES = [
-    'text/turtle',
-    'application/rdf+xml',
-    'application/xhtml+xml',
-    'text/n3',
-    'text/html',
-    'application/ld+json',
-];
-
-function PrefixFactory (prefix: string): ((id: string) => string) {
-    const lastSymbol = prefix[prefix.length - 1];
-    const _prefix = lastSymbol === '/' || lastSymbol === '#' ? prefix : prefix + '/';
-    return (id: string) => {
-        return _prefix + id;
-    };
-}
-
-export function isLiteral(el: Node): el is Literal {
-    return el.interfaceName === 'Literal';
-}
-
-export function isNamedNode(el: Node): el is NamedNode {
-    return el.interfaceName === 'NamedNode';
-}
-
-export class RDFCacheableStore {
-    private rdfStorage: RDFStore;
-    private checkingElementMap: Dictionary<(Promise<boolean> | boolean)> = {};
-    private labelsMap: Dictionary<Triple[]> = {};
-    private countMap: Dictionary<number> = {};
-    private elementTypes: Dictionary<Triple[]> = {};
-
-    constructor (
-        public dataFetching: boolean,
-        private prefs: { [id: string]: (id: string) => string },
-    ) {
-        this.rdfStorage = createStore();
-    }
-
-    parseData(data: string, contentType?: string, prefix?: string): Promise<boolean> {
-        let resultPromise: Promise<boolean>;
-        if (contentType) {
-            try {
-                resultPromise = new N3Parser().parse(data).then((rdfGraph: any) => {
-                    this.rdfStorage.add(prefix || DEFAULT_STOREG_URI, rdfGraph);
-                    return true;
-                });
-            } catch (error) {
-                console.error(error);
-                resultPromise = Promise.resolve(false);
-            }
-        } else {
-            resultPromise = Promise.resolve(false);
-        }
-
-        return resultPromise.then(loaded => {
-            if (loaded) {
-                return Promise.all([
-                    this.rdfStorage.match(
-                        null,
-                        this.prefs.RDFS('label'),
-                        null,
-                    ).then(labelTriples => {
-                        const labelsList = labelTriples.toArray();
-                        for (const triple of labelsList) {
-                            const element = triple.subject.nominalValue;
-                            if (!this.labelsMap[element]) {
-                                this.labelsMap[element] = [];
-                            }
-                            if (isLiteral(triple.object)) {
-                                this.labelsMap[element].push(triple);
-                            }
-                        }
-                        return 0;
-                    }),
-                    this.rdfStorage.match(
-                        null,
-                        this.prefs.RDF('type'),
-                        null,
-                    ).then(typeInstances => {
-                        const typeInstMap: Dictionary<string[]> = {};
-                        for (const instTriple of typeInstances.toArray()) {
-                            const type = instTriple.object.nominalValue;
-                            const inst = instTriple.subject.nominalValue;
-                            if (!typeInstMap[type]) {
-                                typeInstMap[type] = [];
-                            }
-                            if (!this.elementTypes[inst]) {
-                                this.elementTypes[inst] = [];
-                            }
-                            if (typeInstMap[type].indexOf(inst) === -1) {
-                                typeInstMap[type].push(inst);
-                            }
-                            this.elementTypes[inst].push(instTriple);
-                        }
-                        Object.keys(typeInstMap).forEach(key => this.countMap[key] = typeInstMap[key].length);
-                        return 0;
-                    }),
-                ]).then(() => {
-                    return loaded;
-                });
-            } else {
-                return loaded;
-            }
-        });
-    }
-
-    match(
-        subject?: string,
-        predicate?: string,
-        object?: string,
-        iri?: string,
-        callback?: (...args: any[]) => void,
-        limit?: number,
-    ): Promise<RDFGraph> {
-        if (subject && predicate === this.prefs.RDFS('label') && !object) {
-            return Promise.resolve(this.getLabels(subject));
-        } else if (subject && predicate === this.prefs.RDF('type') && !object) {
-            return Promise.resolve(this.getTypes(subject));
-        } else {
-            return this.rdfStorage.match(
-                subject,
-                predicate,
-                object,
-                iri,
-                callback,
-                limit,
-            );
-        }
-    }
-
-    checkElement(id: string): Promise<boolean> {
-        if (this.dataFetching) {
-            if (this.elementTypes[id] || this.labelsMap[id]) {
-                return Promise.resolve(true);
-            } else {
-                if (this.checkingElementMap[id] === undefined) {
-                    return this.rdfStorage.match(id, null, null).then(result => {
-                        const resultArray = result.toArray();
-                        if (resultArray.length === 0) {
-                            return this.downloadElement(id).then(isElementDownloaded => {
-                                if (isElementDownloaded) {
-                                    return true;
-                                } else {
-                                    return null;
-                                }
-                            });
-                        } else if (resultArray.length !== 0) {
-                            return true;
-                        } else {
-                            return false;
-                        }
-                    });
-                } else if (this.checkingElementMap[id] instanceof Promise) {
-                    return <Promise<boolean>> this.checkingElementMap[id];
-                } else {
-                    return Promise.resolve(<boolean> this.checkingElementMap[id]);
-                }
-            }
-        } else {
-            return Promise.resolve(true);
-        }
-    }
-
-    getTypeCount(id: string): number {
-        return this.countMap[id] || 0;
-    }
-
-    private getLabels (id: string): RDFGraph {
-        return createGraph(this.labelsMap[id]);
-    }
-
-    private getTypes (id: string): RDFGraph {
-        return createGraph(this.elementTypes[id]);
-    }
-
-    private downloadElement (elementId: string): Promise<boolean> {
-        let typePointer = 0;
-
-        const recursivePart = (): Promise<boolean> => {
-            const acceptType = STORAGE_TYPES[typePointer++];
-
-            if (acceptType) {
-                return fetchFile({
-                    url: elementId,
-                    headers: {
-                        'Accept': acceptType,
-                    },
-                }).then(body => {
-                    if (body) {
-                        let parsingError = false;
-                        try {
-                            return this.parseData(body, acceptType, elementId);
-                        } catch (error) {
-                            parsingError = true;
-                            console.warn('Getting file in ' + acceptType + 'format failed');
-                        }
-                        if (parsingError) {
-                            return recursivePart();
-                        } else {
-                            const el = elementId;
-                            return this.rdfStorage.match(elementId, null, null).then(triples => {
-                                return triples.toArray().length > 0;
-                            });
-                        }
-                    } else {
-                        return false;
-                    }
-                });
-            } else {
-                return Promise.resolve(false);
-            }
-        };
-
-        const promise = recursivePart().then(result => {
-            this.checkingElementMap[elementId] = result;
-            return result;
-        });
-        this.checkingElementMap[elementId] = promise;
-        return promise;
-    }
-}
 
 export class RDFDataProvider implements DataProvider {
     private initStatement: Promise<boolean> | boolean;
@@ -247,7 +19,7 @@ export class RDFDataProvider implements DataProvider {
             XSD: PrefixFactory('http://www.w3.org/2001/XMLSchema#'),
             OWL: PrefixFactory('http://www.w3.org/2002/07/owl#'),
         };
-        this.rdfStorage = new RDFCacheableStore(params.dataFetching, this.prefs);
+        this.rdfStorage = new RDFCacheableStore(params.dataFetching);
 
         const parsePromises: Promise<boolean>[] = [];
 
@@ -360,16 +132,16 @@ export class RDFDataProvider implements DataProvider {
                             count: this.rdfStorage.getTypeCount(cl),
                             children: [],
                         };
-                        labelQueries.push(this.getLabels(cl).then(label => {
-                            classElement.label = { values: label };
+                        labelQueries.push(this.getLabels(cl).then(labels => {
+                            classElement.label = { values: labels };
                             return true;
                         }));
                         dictionary[cl] = classElement;
                         firstLevel[cl] = classElement;
                     } else if (!dictionary[cl].label) {
                         classElement = dictionary[cl];
-                        labelQueries.push(this.getLabels(cl).then(label => {
-                            classElement.label = { values: label };
+                        labelQueries.push(this.getLabels(cl).then(labels => {
+                            classElement.label = { values: labels };
                             return true;
                         }));
                     } else {
@@ -409,22 +181,84 @@ export class RDFDataProvider implements DataProvider {
         });
     }
 
-    // For lazy loading (not implemented)
-    // ====================================================
-
     propertyInfo(params: { propertyIds: string[] }): Promise<Dictionary<PropertyModel>> {
-        return Promise.resolve({});
+        const propertyInfoResult: Dictionary<PropertyModel> = {};
+
+        const queries = params.propertyIds.map(
+            propId => this.rdfStorage.checkElement(propId).then(checked => {
+                if (checked) {
+                    return this.getLabels(propId).then(labels => ({
+                            id: propId,
+                            label: { values: labels },
+                        }),
+                    );
+                } else {
+                    return null;
+                }
+            }).catch(error => {
+                console.warn(error);
+                return null;
+            }),
+        );
+
+        return Promise.all(queries).then((fetchedModels) => {
+            for (const model of fetchedModels) {
+                if (model) {
+                    propertyInfoResult[model.id] = model;
+                }
+            }
+            return propertyInfoResult;
+        });
     }
 
     classInfo(params: { classIds: string[] }): Promise<ClassModel[]> {
-        return Promise.resolve([]);
+        const queries = params.classIds.map(
+            classId => this.rdfStorage.checkElement(classId).then(checked => {
+                if (checked) {
+                    return this.getLabels(classId).then(labels => ({
+                            id: classId,
+                            label: { values: labels },
+                            count: this.rdfStorage.getTypeCount(classId),
+                            children: [],
+                        }),
+                    );
+                } else {
+                    return null;
+                }
+            }).catch(error => {
+                console.warn(error);
+                return null;
+            }),
+        );
+
+        return Promise.all(queries).then(fetchedModels => {
+            return fetchedModels.filter(cm => cm);
+        });
     }
 
     linkTypesInfo(params: {linkTypeIds: string[]}): Promise<LinkType[]> {
-        return Promise.resolve([]);
-    }
+        const queries = params.linkTypeIds.map(
+            typeId => this.rdfStorage.checkElement(typeId).then(checked => {
+                if (checked) {
+                    return this.getLabels(typeId).then(labels => ({
+                            id: typeId,
+                            label: { values: labels },
+                            count: this.rdfStorage.getTypeCount(typeId),
+                        }),
+                    );
+                } else {
+                    return null;
+                }
+            }).catch(error => {
+                console.warn(error);
+                return null;
+            }),
+        );
 
-    // ====================================================
+        return Promise.all(queries).then((fetchedModels) => {
+            return fetchedModels.filter(lt => lt);
+        });
+    }
 
     linkTypes(): Promise<LinkType[]> {
         const linkTypes: LinkType[] = [];
@@ -464,6 +298,9 @@ export class RDFDataProvider implements DataProvider {
                 } else {
                     return null;
                 }
+            }).catch(error => {
+                console.warn(error);
+                return null;
             }),
         );
 
@@ -496,6 +333,9 @@ export class RDFDataProvider implements DataProvider {
                             targetId: target,
                         }));
                     });
+                }).catch(error => {
+                    console.warn(error);
+                    return null;
                 }));
             }
         }
@@ -763,33 +603,3 @@ export class RDFDataProvider implements DataProvider {
 }
 
 export default RDFDataProvider;
-
-function fetchFile(params: {
-    url: string,
-    headers?: any,
-}) {
-    return fetch(
-        '/lod-proxy/' + params.url,
-        {
-            method: 'GET',
-            credentials: 'same-origin',
-            mode: 'cors',
-            cache: 'default',
-            headers: params.headers || {
-                'Accept': 'application/rdf+xml',
-            },
-        },
-    ).then(response => {
-        if (response.ok) {
-            return response.text();
-        } else {
-            const error = new Error(response.statusText);
-            (<any> error).response = response;
-            console.error(error);
-            return undefined;
-        }
-    }).catch(error => {
-        console.error(error);
-        return undefined;
-    });
-}

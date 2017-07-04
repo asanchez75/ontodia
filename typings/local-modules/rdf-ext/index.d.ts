@@ -17,6 +17,14 @@ declare module "rdf-ext" {
 
     export class RDFGraph {
         toArray: () => Triple[];
+        match: (
+            subject?: string,
+            predicat?: string,
+            object?: string,
+            iri?: string,
+            callback?: (result: any) => void,
+            limit?: number
+        ) => RDFGraph;
     }
 
     export class Triple {
