@@ -101,18 +101,6 @@ export class RDFDataProvider implements DataProvider {
                     }
                 }
 
-                const typeInstMap: Dictionary<string[]> = {};
-                for (const instTriple of arrays[2]) {
-                    const type = instTriple.object.nominalValue;
-                    const inst = instTriple.subject.nominalValue;
-                    if (!typeInstMap[type]) {
-                        typeInstMap[type] = [];
-                    }
-                    if (typeInstMap[type].indexOf(inst) === -1) {
-                        typeInstMap[type].push(inst);
-                    }
-                }
-
                 const dictionary: Dictionary<ClassModel> = {};
                 const firstLevel: Dictionary<ClassModel> = {};
 

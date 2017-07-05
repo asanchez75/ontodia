@@ -197,7 +197,7 @@ export class RDFCacheableStore {
                                 });
                             }
                         }).catch(error => {
-                            console.warn('Getting file in ' + acceptType + ' format failed');
+                            console.warn('Getting file in ' + acceptType + ' format failed. Error:' + error);
                             return recursivePart();
                         });
                     } else {

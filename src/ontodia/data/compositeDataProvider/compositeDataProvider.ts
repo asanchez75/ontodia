@@ -163,7 +163,9 @@ export class CompositeDataProvider implements DataProvider {
         } else {
             let linkTypeIds = params.linkTypeIds;
             return this.queueProcessResults((previousResult: LinkType[], dp: DPDefinition) => {
-                linkTypeIds = linkTypeIds.filter(id => !previousResult || previousResult.map(lt => lt.id).indexOf(id) === -1);
+                linkTypeIds = linkTypeIds.filter(id =>
+                    !previousResult || previousResult.map(lt => lt.id).indexOf(id) === -1);
+
                 if (linkTypeIds.length > 0) {
                     return dp.dataProvider.linkTypesInfo({ linkTypeIds: linkTypeIds });
                 } else {
@@ -371,7 +373,7 @@ export class CompositeDataProvider implements DataProvider {
             return {
                 id: a.id,
                 label: this.mergeLabels(a.label, b.label),
-                count: Math.max(a.count, b.count),
+                count: a.count + b.count,
             };
         };
 
@@ -507,8 +509,8 @@ export class CompositeDataProvider implements DataProvider {
         const mergeCounts = (a: LinkCount, b: LinkCount): LinkCount => {
             return {
                 id: a.id,
-                inCount: Math.max(a.inCount, b.inCount),
-                outCount: Math.max(a.outCount, b.outCount),
+                inCount: a.inCount + b.inCount,
+                outCount: a.outCount + b.outCount,
             };
         };
 
@@ -585,7 +587,7 @@ export class CompositeDataProvider implements DataProvider {
         return {
             id: a.id,
             label: this.mergeLabels(a.label, b.label),
-            count: Math.max(a.count, b.count),
+            count: a.count + b.count,
             children: Object.keys(childrenDictionary).map(key => childrenDictionary[key]),
         };
     }
