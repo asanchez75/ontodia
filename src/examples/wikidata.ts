@@ -29,7 +29,7 @@ function foreignFilter(key: string, alternatives: string[]) {
     });
     const requestBody = {
         threshold: 0.1,
-        term: key,
+        term: key.toLowerCase(),
         instance_properties: alternatives,
     };
     return fetch('/wikidata-prop-suggest', {

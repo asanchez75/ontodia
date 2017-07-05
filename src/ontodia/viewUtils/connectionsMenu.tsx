@@ -441,14 +441,31 @@ class ConnectionsList extends React.Component<ConnectionsListProps, { weights: D
         const aText = (aLabel ? chooseLocalizedText(aLabel.values, this.props.lang).text.toLowerCase() : null);
         const bText = (bLabel ? chooseLocalizedText(bLabel.values, this.props.lang).text.toLowerCase() : null);
 
-        const aWeight = this.state.weights[a.id] ? this.state.weights[a.id].value : 0;
-        const bWeight = this.state.weights[b.id] ? this.state.weights[b.id].value : 0;
-
-        if (aWeight < bWeight) {
+        if (aText < bText) {
             return -1;
         }
 
+        if (aText > bText) {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    private compareLinksByWeight = (a: FatLinkType, b: FatLinkType) => {
+        const aLabel: Label = a.get('label');
+        const bLabel: Label = b.get('label');
+        const aText = (aLabel ? chooseLocalizedText(aLabel.values, this.props.lang).text.toLowerCase() : null);
+        const bText = (bLabel ? chooseLocalizedText(bLabel.values, this.props.lang).text.toLowerCase() : null);
+
+        const aWeight = this.state.weights[a.id] ? this.state.weights[a.id].value : 0;
+        const bWeight = this.state.weights[b.id] ? this.state.weights[b.id].value : 0;
+
         if (aWeight > bWeight) {
+            return -1;
+        }
+
+        if (aWeight < bWeight) {
             return 1;
         }
 
@@ -469,14 +486,20 @@ class ConnectionsList extends React.Component<ConnectionsListProps, { weights: D
             const text = (label ? chooseLocalizedText(label.values, this.props.lang).text.toLowerCase() : null);
             return (
                 !this.props.filterKey) ||
-                (text && text.indexOf(this.props.filterKey.toLowerCase()) !== -1)
-                ||
-                this.state.weights[link.id] && this.state.weights[link.id].value > 0;
+                (text && text.indexOf(this.props.filterKey.toLowerCase()) !== -1);
         })
         .sort(this.compareLinks);
-    };
+    }
 
-    private getViews = (links: FatLinkType[]) => {
+    private getProbableLinks = () => {
+        return (this.props.data.links || []).filter(link => {
+            const label: Label = link.get('label');
+            const text = (label ? chooseLocalizedText(label.values, this.props.lang).text.toLowerCase() : null);
+            return this.state.weights[link.id] && this.state.weights[link.id].value > 0;
+        }).sort(this.compareLinksByWeight);
+    }
+
+    private getViews = (links: FatLinkType[], notSure?: boolean) => {
         const countMap = this.props.data.countMap || {};
         const views: React.ReactElement<any>[] = [];
 
@@ -491,17 +514,21 @@ class ConnectionsList extends React.Component<ConnectionsListProps, { weights: D
                }
 
                if (count !== 0) {
+                   const postfix = !notSure ? '' : '-probable';
                    views.push(
                        <LinkInPopupMenu
-                           key={`${direction}-${link.id}`}
+                           key={`${direction}-${link.id}-${postfix}`}
                            link={link}
                            onExpandLink={this.props.onExpandLink}
                            lang={this.props.lang}
                            count={count}
                            direction={direction}
-                           filterKey={this.props.filterKey}
+                           filterKey={!notSure ? this.props.filterKey : ''}
                            onMoveToFilter={this.props.onMoveToFilter}
-                       />
+                           probability={
+                               (this.state.weights[link.id] && notSure  ? this.state.weights[link.id].value : 0)
+                           }
+                       />,
                    );
                }
             });
@@ -511,10 +538,12 @@ class ConnectionsList extends React.Component<ConnectionsListProps, { weights: D
 
     render() {
         const links = this.getLinks();
+        const probableLinks = this.getProbableLinks();
         const views = this.getViews(links);
+        const probableViews = this.getViews(probableLinks, true);
 
         let viewList: React.ReactElement<any> | React.ReactElement<any>[];
-        if (views.length === 0) {
+        if (views.length === 0 && probableViews === 0) {
             viewList = <label className='ontodia-connections-menu_links-list__empty'>List empty</label>;
         } else {
             viewList = views;
@@ -534,11 +563,17 @@ class ConnectionsList extends React.Component<ConnectionsListProps, { weights: D
                 ].concat(viewList);
             }
         }
-
+        let probablePart = null;
+        if (views.length === 0) {
+            probablePart = [
+                <li key='probabl-links'><label>Probably, you're looking for:</label></li>,
+                probableViews,
+            ];
+        }
         return <ul className={
             'ontodia-connections-menu_links-list '
-                + (views.length === 0 ? 'ocm_links-list-empty' : '')
-        }>{viewList}</ul>;
+                + (views.length === 0 && probableViews === 0 ? 'ocm_links-list-empty' : '')
+        }>{viewList}{probablePart}</ul>;
     }
 }
 
@@ -550,6 +585,7 @@ interface LinkInPopupMenuProps {
     filterKey?: string;
     onExpandLink?: (link: FatLinkType, direction?: 'in' | 'out') => void;
     onMoveToFilter?: (link: FatLinkType, direction?: 'in' | 'out') => void;
+    probability?: number;
 }
 
 class LinkInPopupMenu extends React.Component<LinkInPopupMenuProps, {}> {
@@ -568,12 +604,17 @@ class LinkInPopupMenu extends React.Component<LinkInPopupMenuProps, {}> {
 
     render() {
         const fullText = chooseLocalizedText(this.props.link.get('label').values, this.props.lang).text;
-        const textLine = getColoredText(fullText, this.props.filterKey);
+        const probability = Math.round(this.props.probability * 100);
+        const textLine = getColoredText(
+            fullText + (probability > 0 ? ' (' + probability + '%)' : ''),
+            this.props.filterKey,
+        );
         const directionName =
             this.props.direction === 'in' ? 'source' :
             this.props.direction === 'out' ? 'target' :
             'all connected';
         const navigationTitle = `Navigate to ${directionName} "${fullText}" elements`;
+
         return (
             <li data-linkTypeId={this.props.link.id}
                 className='link-in-popup-menu' title={navigationTitle}
