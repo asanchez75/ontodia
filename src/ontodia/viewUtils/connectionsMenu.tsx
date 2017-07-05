@@ -538,12 +538,12 @@ class ConnectionsList extends React.Component<ConnectionsListProps, { weights: D
 
     render() {
         const links = this.getLinks();
-        const probableLinks = this.getProbableLinks();
+        const probableLinks = this.getProbableLinks().filter(link => links.indexOf(link) === -1);
         const views = this.getViews(links);
         const probableViews = this.getViews(probableLinks, true);
 
         let viewList: React.ReactElement<any> | React.ReactElement<any>[];
-        if (views.length === 0 && probableViews === 0) {
+        if (views.length === 0 && probableViews.length === 0) {
             viewList = <label className='ontodia-connections-menu_links-list__empty'>List empty</label>;
         } else {
             viewList = views;
@@ -564,15 +564,15 @@ class ConnectionsList extends React.Component<ConnectionsListProps, { weights: D
             }
         }
         let probablePart = null;
-        if (views.length === 0) {
+        if (probableViews.length !== 0) {
             probablePart = [
-                <li key='probabl-links'><label>Probably, you're looking for:</label></li>,
+                <li key='probabl-links'><label>Probably, you're looking for..</label></li>,
                 probableViews,
             ];
         }
         return <ul className={
             'ontodia-connections-menu_links-list '
-                + (views.length === 0 && probableViews === 0 ? 'ocm_links-list-empty' : '')
+                + (views.length === 0 && probableViews.length === 0 ? 'ocm_links-list-empty' : '')
         }>{viewList}{probablePart}</ul>;
     }
 }
