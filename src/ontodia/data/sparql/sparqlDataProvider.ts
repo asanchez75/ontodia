@@ -363,7 +363,9 @@ export function executeSparqlConstruct(endpoint: string, query: string, method: 
                     resolve(triples);
                 }
             });
-        });
+        }).catch(error => {
+            console.log(error);
+        })
     });
 }
 

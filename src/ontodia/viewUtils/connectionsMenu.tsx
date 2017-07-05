@@ -25,11 +25,19 @@ const ALL_RELATED_ELEMENTS_LINK: FatLinkType = new FatLinkType({
     diagram: null,
 });
 
+export type ForeignFilter = (key: string, alternatives: string[]) => Promise<Dictionary<FiltrationTerm>>;
+
+export interface FiltrationTerm {
+    id: string;
+    value: number;
+}
+
 export interface ConnectionsMenuOptions {
     paper: joint.dia.Paper;
     view: DiagramView;
     cellView: joint.dia.CellView;
     onClose: () => void;
+    foreignFilter?: ForeignFilter;
 }
 
 export class ConnectionsMenu {
@@ -250,6 +258,7 @@ export class ConnectionsMenu {
             onExpandLink: this.onExpandLink,
             onPressAddSelected: this.addSelectedElements,
             onMoveToFilter: this.onMoveToFilter,
+            foreignFilter: this.options.foreignFilter,
         }), this.container);
     };
 
@@ -279,6 +288,8 @@ interface ConnectionsMenuMarkupProps {
     onExpandLink?: (link: FatLinkType, direction?: 'in' | 'out') => void;
     onPressAddSelected?: (selectedObjects: ReactElementModel[]) => void;
     onMoveToFilter?: (link: FatLinkType, direction?: 'in' | 'out') => void;
+
+    foreignFilter?: ForeignFilter;
 }
 
 class ConnectionsMenuMarkup extends React.Component<
@@ -342,12 +353,14 @@ class ConnectionsMenuMarkup extends React.Component<
             if (this.props.state === 'loading') {
                 return <label className='ontodia-connections-menu__loading'>Loading...</label>;
             }
+
             return <ConnectionsList
                 data={this.props.connectionsData}
                 lang={this.props.lang}
                 filterKey={this.state.filterKey}
                 onExpandLink={this.onExpandLink}
-                onMoveToFilter={this.props.onMoveToFilter}/>;
+                onMoveToFilter={this.props.onMoveToFilter}
+                foreignFilter={this.props.foreignFilter}/>;
         } else {
             return <div/>;
         }
@@ -401,11 +414,25 @@ interface ConnectionsListProps {
 
     onExpandLink?: (link: FatLinkType, direction?: 'in' | 'out') => void;
     onMoveToFilter?: (link: FatLinkType, direction?: 'in' | 'out') => void;
+
+    foreignFilter?: ForeignFilter;
 }
 
-class ConnectionsList extends React.Component<ConnectionsListProps, {}> {
+class ConnectionsList extends React.Component<ConnectionsListProps, { weights: Dictionary<FiltrationTerm> }> {
     constructor (props: ConnectionsListProps) {
         super(props);
+        this.state = { weights: {} };
+        if (this.props.foreignFilter && this.props.filterKey) {
+            this.props.foreignFilter(this.props.filterKey, this.props.data.links.map(l => l.id))
+                .then(weights => this.setState({ weights: weights }));
+        }
+    }
+
+    componentWillReceiveProps(newProps: ConnectionsListProps) {
+        if (newProps.foreignFilter && this.props.filterKey) {
+            newProps.foreignFilter(newProps.filterKey, newProps.data.links.map(l => l.id))
+                .then(weights => this.setState({ weights: weights }));
+        }
     }
 
     private compareLinks = (a: FatLinkType, b: FatLinkType) => {
@@ -413,6 +440,17 @@ class ConnectionsList extends React.Component<ConnectionsListProps, {}> {
         const bLabel: Label = b.get('label');
         const aText = (aLabel ? chooseLocalizedText(aLabel.values, this.props.lang).text.toLowerCase() : null);
         const bText = (bLabel ? chooseLocalizedText(bLabel.values, this.props.lang).text.toLowerCase() : null);
+
+        const aWeight = this.state.weights[a.id] ? this.state.weights[a.id].value : 0;
+        const bWeight = this.state.weights[b.id] ? this.state.weights[b.id].value : 0;
+
+        if (aWeight < bWeight) {
+            return -1;
+        }
+
+        if (aWeight > bWeight) {
+            return 1;
+        }
 
         if (aText < bText) {
             return -1;
@@ -423,13 +461,17 @@ class ConnectionsList extends React.Component<ConnectionsListProps, {}> {
         }
 
         return 0;
-    };
+    }
 
     private getLinks = () => {
         return (this.props.data.links || []).filter(link => {
             const label: Label = link.get('label');
             const text = (label ? chooseLocalizedText(label.values, this.props.lang).text.toLowerCase() : null);
-            return (!this.props.filterKey) || (text && text.indexOf(this.props.filterKey.toLowerCase()) !== -1);
+            return (
+                !this.props.filterKey) ||
+                (text && text.indexOf(this.props.filterKey.toLowerCase()) !== -1)
+                ||
+                this.state.weights[link.id] && this.state.weights[link.id].value > 0;
         })
         .sort(this.compareLinks);
     };
@@ -437,6 +479,7 @@ class ConnectionsList extends React.Component<ConnectionsListProps, {}> {
     private getViews = (links: FatLinkType[]) => {
         const countMap = this.props.data.countMap || {};
         const views: React.ReactElement<any>[] = [];
+
         for (const link of links) {
             ['in', 'out'].forEach((direction: 'in' | 'out') => {
                let count = 0;

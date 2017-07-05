@@ -20,7 +20,7 @@ import { DefaultTemplate } from '../customization/defaultTemplate';
 import { DefaultTemplateBundle } from '../customization/templates/defaultTemplates';
 
 import { Halo } from '../viewUtils/halo';
-import { ConnectionsMenu } from '../viewUtils/connectionsMenu';
+import { ConnectionsMenu, ForeignFilter } from '../viewUtils/connectionsMenu';
 import {
     toSVG, ToSVGOptions, toDataURL, ToDataURLOptions,
 } from '../viewUtils/toSvg';
@@ -39,6 +39,7 @@ export interface DiagramViewOptions {
     linkStyleResolvers?: LinkStyleResolver[];
     templatesResolvers?: TemplateResolver[];
     disableDefaultHalo?: boolean;
+    connectionsMenuFilterCallBack?: ForeignFilter;
 }
 
 export interface TypeStyle {
@@ -269,6 +270,7 @@ export class DiagramView extends Backbone.Model {
                 this.connectionsMenu.remove();
                 this.connectionsMenu = undefined;
             },
+            foreignFilter: this.options.connectionsMenuFilterCallBack,
         });
     }
 
